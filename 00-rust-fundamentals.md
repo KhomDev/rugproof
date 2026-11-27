@@ -8,6 +8,8 @@
 
 **This file does not cover:** the Solana account model, PDAs, tokens, Anchor, or real incidents. Those start in [01](./01-solana-foundations.md) and finish in [04](./04-advanced-security-and-exploits.md).
 
+**Exercises:** [jump to the Exercises section](#exercises) — graded items with hints and answers in collapsible sections.
+
 ## How to use this guide
 
 Solana programs are written in a narrow but demanding slice of Rust. You don't need all of Rust to start, but the parts you do need (borrowing, lifetimes, traits, error handling, integer behaviour and byte layouts) show up in every program and in almost every bug. This guide teaches exactly those parts, each with a small example and a note on where it appears on Solana.
@@ -609,6 +611,7 @@ Unit tests check the cases you thought of. Property tests and fuzzers find the o
 
 > **Later:** [04 §1.16](./04-advanced-security-and-exploits.md#116-rust-level-bugs-panics-compute-memory-and-the-supply-chain) shows how these habits become audit findings. The Rust checklist stays here; do not look for a second copy of it.
 
+<a id="exercises"></a>
 ## 14. Exercises
 
 Clone the repo, then:

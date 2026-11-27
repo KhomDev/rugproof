@@ -8,6 +8,8 @@
 
 **This file does not cover:** Rust-level bugs ([00 §13](./00-rust-fundamentals.md#13-rust-security-for-on-chain-code)); teaching the account model from scratch ([01, Part B](./01-solana-foundations.md#part-b-solana-terms-as-they-look-in-code)); Anchor wrappers and constraints ([02 §§4–5](./02-anchor-deep-dive.md#4-accounts-structs)); or the full vulnerable-vs-fixed bug-class catalogue and incident write-ups ([04](./04-advanced-security-and-exploits.md)). Section 6 is a map into 04, not a second copy of it.
 
+**Exercises:** [jump to the Exercises section](#exercises) — graded items with hints and answers in collapsible sections.
+
 ## Learning objectives
 
 By the end of this guide you can:
@@ -323,7 +325,7 @@ Walk this list on every mint a protocol will hold, reward, or price against. Lay
 4. A burned *minimum liquidity* share that some AMMs mint into a permanent lock (look for this in `initialize` — part 5.1 flags it in Raydium CP-Swap) is not the same as "the team cannot withdraw the rest of the LP." Record both.
 5. If there is no LP token because the market is a different design (lending reserves, a perp, an order book), say so and inspect who can withdraw the reserves instead of forcing an LP-lock story onto it.
 
-Write the answers down before you read a single handler. The leftover trust assumptions become the first page of a due-diligence report ([04, capstone](./04-advanced-security-and-exploits.md#part-4-exercises)).
+Write the answers down before you read a single handler. The leftover trust assumptions become the first page of a due-diligence report ([04, capstone](./04-advanced-security-and-exploits.md#exercises)).
 
 ## 4. CPIs and how privileges flow
 
@@ -647,6 +649,8 @@ A CPI from your program re-enters at step 3 with the privilege check in front of
 
 ### 7.5 Exercises for this part
 
+These runtime drills stay here. The full graded set for the guide is in [Exercises](#exercises).
+
 1. Clone Agave at the current mainnet tag. Put a breakpoint (or `log::info!`) in `InvokeContext::push` and `cpi_common`; run a `program-test` / LiteSVM test of a CPI and watch the stack.
 2. Write a test that triggers each of: `ReentrancyNotAllowed`, `PrivilegeEscalation` (writable and signer), `CallDepth`, `InvalidRealloc`, `ExternalAccountDataModified`, `UnbalancedInstruction`. Read the exact code that raised each.
 3. Read `check_authorized_program` and explain why a program cannot CPI into `bpf_loader` to deploy code, but can CPI into the upgradeable loader to `Upgrade`.
@@ -654,7 +658,7 @@ A CPI from your program re-enters at step 3 with the privilege check in front of
 5. Read the program cache's handling of `DelayVisibility` and explain what happens to a tx that invokes a program upgraded in the same slot.
 6. Use [LiteSVM](https://github.com/LiteSVM/litesvm) or Mollusk for fast tests: both embed the Agave SVM crates, so failures match the real validator.
 
-## 8. Checklist, exercises, reading list
+## 8. Checklist and reading list
 
 ### 8.1 Per-instruction audit checklist
 
@@ -669,42 +673,9 @@ Use this while you read a protocol in part 5. For the full bug-class checklist (
 
 Then, for each instruction, the questions from parts 1–4: who owns each account, who must sign, who may write, what proves identity, what a CPI forwards, and whether any post-CPI value is stale. Write a test before you write a finding.
 
-### 8.2 Exercises, in order
+### 8.2 Exercises
 
-1. **Quiz: what Token `Transfer` does not check.** Without looking, list five things `spl_token::transfer` will not prove for you (start from §3.2). Then open the hint.
-
-2. **Read-only investigation, two official programs and one mint you choose.** Repeat [01, exercise 1.3](./01-solana-foundations.md#level-1-the-account-model-and-spotting-a-missing-check-parts-a-b) for the System and Token programs if you have not already. Then pick **one real mint you are willing to name** (for example a mint a protocol in part 5 actually uses — take the address from that project's public docs or source, not from memory, and do not invent one). Fill the §3.6 mint sheet from Explorer or `spl-token display`. Record the token program, authorities, extensions, and any LP mint you can find. This is observation only.
-
-3. **Checklist audit of a described pool (hypothetical).** No addresses are given; do not invent any. "Harbor AMM (hypothetical) uses an upgradeable program whose upgrade authority is a single wallet. The pool's quote mint is Token-2022 with a transfer fee and a permanent delegate. The project's site says LP is locked; the largest LP token-account holder is a wallet the site labels 'team treasury'. Admin `set_fee` has no on-chain cap." Write a one-page audit note: what is already a trust assumption, what you would still verify on-chain, and which later 04 classes / incidents this resembles. Use only incidents that are already sourced in 04.
-
-4. **sealevel-attacks, as detection.** For each of the 11 insecure programs in [coral-xyz/sealevel-attacks](https://github.com/coral-xyz/sealevel-attacks), name the missing sentence and write a test that the insecure version accepts a crafted account list and the `secure` version rejects it. Only against that repo's programs (or a copy you own).
-
-5. **Write a vulnerable vault in native Rust (no Anchor), then port it to Anchor and to Pinocchio.** Writing raw account parsing once is the fastest way to internalize part 1. Keep the vulnerable version off any network.
-
-6. **Incident paragraphs, not reproductions.** Wormhole (sysvar spoofing, Feb 2022), Cashio (missing validation chain on collateral, Mar 2022), Crema (fake tick account / owner check, Jul 2022), Mango Markets (oracle manipulation, Oct 2022). Write a one-paragraph root cause for each in part-1 vocabulary, then compare with the sourced write-ups in [guide 04](./04-advanced-security-and-exploits.md). Do not build a working steal against any live or historical program.
-
-7. **Audit reports.** Read 10 public reports on the three protocols in part 5 (OtterSec, Neodyme, Zellic, Sec3, Offside, Certora publish many). For each finding, map it to a 04 class (use the §6 table).
-
-8. **Fuzzing.** Trident (Ackee) for Anchor programs, and Crucible, which ships built into Anchor v2. Fuzz one invariant from each protocol in part 5. \[Likely\]
-
-<details>
-<summary>Hints</summary>
-
-- **1.** Destination identity, `source != destination` accounting, decimals (`Transfer` vs `TransferChecked`), token-account `owner` vs `AccountInfo.owner`, frozen state is checked but your vault being the *intended* account is not.
-- **2.** `spl-token display --program-2022 <MINT>` if Explorer shows the Token-2022 program as owner. If you cannot find a public address in the protocol's docs or source, skip the mint and say so rather than guessing.
-- **3.** Raydium 2022 is the admin-key incident; Token-2022 transfer fees and permanent delegate are §3.4 / 04 §1.14; "site says locked" is exactly the claim §3.6 tells you to verify against holders.
-- **4.** The §6.1 table is the answer key for the missing sentences. The tests follow [01, Part F](./01-solana-foundations.md#part-f-testing-and-your-first-exploit-test).
-
-</details>
-
-<details>
-<summary>Answers (quiz and hypothetical checklist)</summary>
-
-**1.** A complete answer includes at least: (a) the destination is the protocol's intended account, not "some token account of the right mint"; (b) self-transfers succeed and must not break your accounting; (c) `Transfer` does not check decimals — `TransferChecked` does, and is required for many Token-2022 extensions; (d) `AccountInfo.owner` is the Token program, which does not prove the token-account `owner` field is your user; (e) it does not prove the mint is the one you intended if you never passed/checked the mint; plus freeze is checked by Token, but a frozen *vault* is a liveness failure your protocol must still reason about. Close / delegate / extensions are fair extras.
-
-**3.** Trust assumptions already visible in the prompt: single-wallet upgrade authority (can replace the program; compare [04 §1.15](./04-advanced-security-and-exploits.md#115-upgrade-authority-and-admin-key-risk) and Raydium [04 §2.8](./04-advanced-security-and-exploits.md#28-raydium-december-2022-a-compromised-admin-key)); uncapped `set_fee`; a permanent delegate that can empty vaults; transfer fees that break naive `amount` accounting; LP in a team wallet, not a verified lock. Still to verify on-chain (once you had real addresses): loader and authority, every extension, the actual LP holders, admin instruction surface, and whether a verified build exists. Do not invent addresses or loss figures.
-
-</details>
+The graded set is now a top-level [Exercises](#exercises) section, at the end of this guide, so it is as visible as the exercises in 00–02 and 04.
 
 ### 8.3 Reading list
 
@@ -730,5 +701,206 @@ Then, for each instruction, the questions from parts 1–4: who owns each accoun
 Checked while writing (2026-11-26, verification links added 2026-11-27): Solana docs for [deploying programs](https://solana.com/docs/programs/deploying), the [SPL Token CLI](https://solana.com/docs/references/spl-token-cli), [Token-2022 extensions](https://solana.com/docs/tokens/extensions) and [verifiable builds](https://solana.com/docs/programs/verified-builds); also Agave `svm/src/transaction_processor.rs`, `program-runtime/src/invoke_context.rs`, `cpi.rs`, `vm.rs`, `serialization.rs`, `programs/bpf_loader/src/lib.rs` on `master`; repo listings for raydium-cp-swap, klend and protocol-v2; the Anchor constraints reference; the Solana p-token upgrade page. Everything else is from general knowledge and tagged accordingly.
 
 ---
+
+<a id="exercises"></a>
+## Exercises
+
+Eight exercises, easy to hard, on this guide's material: runtime invariants, core programs, read-only verification, CPIs, and the bug-class map. Anchor wrappers and constraints were practised in [02](./02-anchor-deep-dive.md#exercises). The full vulnerable-vs-fixed catalogue and the capstone report are [04](./04-advanced-security-and-exploits.md#exercises).
+
+Reading and verification only, unless a step asks you to test a program you own or a public educational repo the text names. Do not invent addresses, dates or loss figures. Do not deploy broken examples.
+
+<a id="exercise-1"></a>
+### Exercise 1 — Spot the red flag (section 2)
+
+Take the struct below (the same one as [§2.3](#23-exercise)) and write, for each field, what is proven. Then find the bug. This is a reading exercise.
+
+```rust
+// SNIPPET for detection only. Deliberately incomplete. Do not deploy.
+#[derive(Accounts)]
+pub struct Withdraw<'info> {
+    #[account(mut, has_one = vault)]
+    pub pool: Account<'info, Pool>,
+    #[account(mut)]
+    pub vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub user_token: Account<'info, TokenAccount>,
+    pub authority: AccountInfo<'info>, // CHECK: pool authority
+    pub owner: Signer<'info>,
+    pub token_program: Program<'info, Token>,
+}
+```
+
+<details>
+<summary>Hint</summary>
+
+Write the "proven to be …" sentence first. Then ask what ties `owner` to the pool, what derives `authority`, and whether `user_token` has to be the same mint as `vault`. [02, Exercise 1](./02-anchor-deep-dive.md#exercise-1) is the same habit on a `SetFee` struct.
+
+</details>
+
+<details>
+<summary>Answer</summary>
+
+Nothing ties `owner` to anything (anyone who can get a signature on their own key can stand in as `owner`). `authority` is never derived (if it is used as the CPI signer via `invoke_signed` with pool seeds that are generic, other pools' vaults can be drained). `user_token.mint` is never checked against the vault mint. `has_one = vault` on `pool` does prove that this pool's stored vault address matches the `vault` account, which is necessary but not sufficient.
+
+</details>
+
+<a id="exercise-2"></a>
+### Exercise 2 — Runtime rules quiz (section 1)
+
+Answer without looking, then open the hint:
+
+1. Who may *decrease* an account's lamports? Who may *increase* them?
+2. When can an account's `owner` be reassigned?
+3. Are `is_signer` and `is_writable` stored in the account, or only on the transaction?
+4. Why must you never use "vault lamports == total deposits" as an invariant?
+5. Why can `["ab", "c"]` and `["a", "bc"]` derive the same PDA?
+
+<details>
+<summary>Hint</summary>
+
+§1.2 (rules 2 and 4), §1.3, §1.4 (donations), §1.5 (seeds are concatenated without separators).
+
+</details>
+
+<details>
+<summary>Answer</summary>
+
+1. Only the owner program may decrease lamports. Any program may increase lamports of a writable account.
+2. Only the current owner may reassign `owner`, and only when the data is all zeros (or empty).
+3. They are per-transaction flags on the message, not fields stored in the account.
+4. Anyone can donate lamports to any account, so a lamport balance can be inflated without a deposit going through your accounting.
+5. Seeds are concatenated with no separators, so those two seed lists are the same byte string. Prefix a fixed literal and prefer fixed-length seeds.
+
+</details>
+
+<a id="exercise-3"></a>
+### Exercise 3 — What Token `Transfer` does not check (section 3.2)
+
+Without looking, list five things `spl_token::transfer` will not prove for you. Then open the hint.
+
+<details>
+<summary>Hint</summary>
+
+Destination identity, `source != destination` accounting, decimals (`Transfer` vs `TransferChecked`), token-account `owner` vs `AccountInfo.owner`, frozen state is checked but your vault being the *intended* account is not.
+
+</details>
+
+<details>
+<summary>Answer</summary>
+
+A complete answer includes at least: (a) the destination is the protocol's intended account, not "some token account of the right mint"; (b) self-transfers succeed and must not break your accounting; (c) `Transfer` does not check decimals — `TransferChecked` does, and is required for many Token-2022 extensions; (d) `AccountInfo.owner` is the Token program, which does not prove the token-account `owner` field is your user; (e) it does not prove the mint is the one you intended if you never passed/checked the mint. Freeze is checked by Token, but a frozen *vault* is a liveness failure your protocol must still reason about. Close / delegate / extensions are fair extras.
+
+</details>
+
+<a id="exercise-4"></a>
+### Exercise 4 — CPI privilege, on paper (section 4)
+
+A user signs a transaction that calls Vault, and Vault CPIs to Token `Transfer` from `vault_ata` (authority = a vault PDA) to `user_ata`. Answer:
+
+1. Whose signature is present at the start of the Vault instruction?
+2. What must Vault pass to `invoke_signed` for Token to see the vault PDA as a signer?
+3. What goes wrong if that PDA's seeds are `[b"vault"]` with no pool or mint?
+4. After the CPI, is `vault_ata.amount` in an Anchor `Account` still correct? What do you call?
+
+This is a written exercise, not a steal.
+
+<details>
+<summary>Hint</summary>
+
+§4.2 is the same walk-through. Seeds are derived from the *calling* program's ID. Stale data is §4.3 and [02, Exercise 5](./02-anchor-deep-dive.md#exercise-5).
+
+</details>
+
+<details>
+<summary>Answer</summary>
+
+1. The user's (and any other required tx signers).
+2. The seed list (and bump) that derive that PDA under *Vault's* program ID, plus the matching account infos.
+3. One PDA signs for every vault: a user of pool A can drain pool B (PDA sharing; [04 §1.5](./04-advanced-security-and-exploits.md#15-pda-seed-collisions-and-bump-canonicalization)).
+4. No — the in-memory `Account` was deserialized before the CPI. Call `reload()` (or re-read the bytes) before using the balance.
+
+</details>
+
+<a id="exercise-5"></a>
+### Exercise 5 — Read-only investigation (section 3.6)
+
+Repeat [01, exercise 1.3](./01-solana-foundations.md#exercises) for the System and Token programs if you have not already (official IDs only). Then pick **one real mint you are willing to name** (for example a mint a protocol in part 5 actually uses — take the address from that project's public docs or source, not from memory, and do not invent one). Fill the §3.6 mint sheet from Explorer or `spl-token display`. Record the token program, authorities, extensions, and any LP mint you can find. This is observation only.
+
+<details>
+<summary>Hint</summary>
+
+`spl-token display --program-2022 <MINT>` if Explorer shows the Token-2022 program as owner. If you cannot find a public address in the protocol's docs or source, skip the mint and say so rather than guessing. Do not send a transaction (`authorize`, `create-token`, `upgrade`, …).
+
+</details>
+
+<details>
+<summary>Answer</summary>
+
+There is no single required paragraph. A complete answer records executable / owner / authority (or "this is a builtin") for the official programs, and for the chosen mint: token program, `mint_authority`, `freeze_authority`, every visible Token-2022 extension, and any LP mint or holder list you actually opened, with the tool that produced each fact. No invented addresses.
+
+</details>
+
+<a id="exercise-6"></a>
+### Exercise 6 — Checklist audit of a described pool (hypothetical)
+
+No addresses are given; do not invent any. "Harbor AMM (hypothetical) uses an upgradeable program whose upgrade authority is a single wallet. The pool's quote mint is Token-2022 with a transfer fee and a permanent delegate. The project's site says LP is locked; the largest LP token-account holder is a wallet the site labels 'team treasury'. Admin `set_fee` has no on-chain cap." Write a one-page audit note: what is already a trust assumption, what you would still verify on-chain, and which later 04 classes / incidents this resembles. Use only incidents that are already sourced in 04.
+
+<details>
+<summary>Hint</summary>
+
+Raydium 2022 is the admin-key incident; Token-2022 transfer fees and permanent delegate are §3.4 / 04 §1.14; "site says locked" is exactly the claim §3.6 tells you to verify against holders.
+
+</details>
+
+<details>
+<summary>Answer</summary>
+
+Trust assumptions already visible in the prompt: single-wallet upgrade authority (can replace the program; compare [04 §1.15](./04-advanced-security-and-exploits.md#115-upgrade-authority-and-admin-key-risk) and Raydium [04 §2.8](./04-advanced-security-and-exploits.md#28-raydium-december-2022-a-compromised-admin-key)); uncapped `set_fee`; a permanent delegate that can empty vaults; transfer fees that break naive `amount` accounting; LP in a team wallet, not a verified lock. Still to verify on-chain (once you had real addresses): loader and authority, every extension, the actual LP holders, admin instruction surface, and whether a verified build exists. Do not invent addresses or loss figures.
+
+</details>
+
+<a id="exercise-7"></a>
+### Exercise 7 — sealevel-attacks, as detection (section 6)
+
+For each of the 11 insecure programs in [coral-xyz/sealevel-attacks](https://github.com/coral-xyz/sealevel-attacks), name the missing sentence. Then, for at least the first four (signer authorization, account data matching, owner checks, type cosplay), write a test that the insecure version accepts a crafted account list and the `secure` version rejects it. Only against that repo's programs (or a copy you own). The §6.1 table is the answer key for the missing sentences. The tests follow [01, Part F](./01-solana-foundations.md#part-f-testing-and-your-first-exploit-test).
+
+<details>
+<summary>Hint</summary>
+
+Start with the table in §6.1, then open the matching `insecure`/`secure` folders. The test should fail if you point it at the secure program. Do not point it at a live deployment.
+
+</details>
+
+<details>
+<summary>Answer</summary>
+
+The missing sentences are the "Missing check" column of §6.1 (and the 04 section linked from each row). A complete write-up lists all eleven in your own words and has passing proof-of-check tests for at least 0–3.
+
+</details>
+
+<a id="exercise-8"></a>
+### Exercise 8 — Incident paragraphs, not reproductions (into 04)
+
+Wormhole (sysvar spoofing, Feb 2022), Cashio (missing validation chain on collateral, Mar 2022), Crema (fake tick account / owner check, Jul 2022), Mango Markets (oracle manipulation, Oct 2022). Write a one-paragraph root cause for each in part-1 vocabulary, then compare with the sourced write-ups in [guide 04, Part 2](./04-advanced-security-and-exploits.md#part-2-real-world-exploits). Do not build a working steal against any live or historical program. Do not add figures that are not in those write-ups.
+
+<details>
+<summary>Hint</summary>
+
+Name the missing sentence first: "this is the real Instructions sysvar"; "the chain is anchored"; "this tick account is *ours* (`account.owner` / PDA)"; "this price cannot be moved inside one transaction." Then check 04 §§2.1–2.3 and 2.6.
+
+</details>
+
+<details>
+<summary>Answer</summary>
+
+Compare your paragraphs with 04 §§2.1, 2.2, 2.3 and 2.6. If you wrote a dollar figure or a date that is not in the cited source, strike it. The capstone that turns this habit into a full report is [04, Exercise 8](./04-advanced-security-and-exploits.md#exercise-8).
+
+</details>
+
+### Stretch
+
+- Write a vulnerable vault in native Rust (no Anchor), then port it to Anchor and to Pinocchio. Keep the vulnerable version off any network.
+- Read 10 public reports on the three protocols in part 5 (OtterSec, Neodyme, Zellic, Sec3, Offside, Certora publish many). For each finding, map it to a 04 class (use the §6 table).
+- Fuzz one invariant from each protocol in part 5 (Trident, or Crucible in Anchor v2). \[Likely\]
 
 **Previous:** [← 02 · Anchor Deep-Dive](./02-anchor-deep-dive.md) · **Next:** [04 · Advanced Security & Real-World Exploits →](./04-advanced-security-and-exploits.md)

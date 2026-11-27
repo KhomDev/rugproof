@@ -25,6 +25,8 @@ By the end of this guide you can:
 
 **This file does not cover:** the account model or writing a native program ([01](./01-solana-foundations.md)); the System / Token / loader invariants or explorer verification ([03](./03-solana-security-deep-dive.md)); or the full vulnerable-vs-fixed catalogue and incidents ([04](./04-advanced-security-and-exploits.md)). When an Anchor pattern is an instance of a 04 class, the text links there.
 
+**Exercises:** [jump to the Exercises section](#exercises) — graded items with hints and answers in collapsible sections.
+
 ### Versions you will meet
 
 | Version | Status (Nov 2026) | Where you'll see it | Key differences |
@@ -1173,11 +1175,15 @@ Anchor validates accounts; it does nothing for the Rust in your handler. The sam
 - [ ] `#[access_control]` and handler-level `require!`s read together with the struct
 - [ ] Version: 0.x duplicates, IDL, `overflow-checks`
 
+<a id="exercises"></a>
 ## Exercises
 
-E0 is a reading exercise (no LiteSVM). Then build one project, a **staking pool**, across E1–E7. Each of those builds on the last and needs a LiteSVM test.
+Eight exercises, easy to hard. **Exercise 1** is a reading drill (no compiler). **Exercises 2–8** build one project, a **staking pool**; each step needs at least one LiteSVM test. Rust language questions belong in [00](./00-rust-fundamentals.md#exercises); the account model and the first Anchor vault are in [01](./01-solana-foundations.md#exercises). This set is about what Anchor generates and what it does not check.
 
-### E0 Spot the red flag (section 5, before you write code)
+Vulnerable or incomplete snippets are for detection. Do not deploy them. Only test programs you own.
+
+<a id="exercise-1"></a>
+### Exercise 1 — Spot the red flag (sections 4–5)
 
 The struct below is deliberately incomplete. For each field, write the "this account is proven to be …" sentence. Then list the missing proofs and the constraint or wrapper that would add them. This is a reading exercise; do not turn it into an attack script.
 
@@ -1193,44 +1199,191 @@ pub struct SetFee<'info> {
 ```
 
 <details>
-<summary>E0 hint</summary>
+<summary>Hint</summary>
 
 `Account<Config>` proves owner and type, not *which* config, and not that `admin` signed or matches `config.admin`. `/// CHECK:` is a comment. Ask what happens if `SetFee` also writes `config.treasury = new_treasury.key()`.
 
 </details>
 
 <details>
-<summary>E0 answer</summary>
+<summary>Answer</summary>
 
 - `config`: program-owned `Config`, writable. Not proven: it is *the* config (needs `seeds = [b"config"]` or `address = …`).
 - `admin`: nothing. Not a `Signer`, not `has_one = admin`, not `address = config.admin`. Anyone can pass the admin's pubkey. Fix: `pub admin: Signer<'info>` plus `has_one = admin` on `config` (or `constraint = admin.key() == config.admin` **and** `Signer`).
 - `new_treasury`: a System-owned account. Not proven: it is an intended treasury (could be the attacker's wallet). If the handler assigns it as the new fee destination, that is an admin-equivalent action and must be gated by the same signer check, and usually a timelock or on-chain bound in a real program.
-- Also missing: any on-chain bound on the new fee, if the instruction takes `fee_bps` as an argument (E1).
+- Also missing: any on-chain bound on the new fee, if the instruction takes `fee_bps` as an argument (Exercise 2).
 
 </details>
 
-### Hints for E1–E7
+<a id="exercise-2"></a>
+### Exercise 2 — Setup: Config, admin, fees (sections 1–3)
+
+`anchor init staking`. Add a `Config` with `admin`, `fee_bps`, `bump`; an `initialize_config(fee_bps)` instruction that rejects `fee_bps > 1000`; and `set_fee` gated by `#[access_control]` (or an equivalent constraint plus `Signer`).
+
+**Done when:** a LiteSVM (or `anchor test`) case shows a non-admin cannot call `set_fee`, and you assert on *your* custom error, not a generic transaction failure. A second test shows `fee_bps = 1001` is rejected on init.
 
 <details>
-<summary>Hints</summary>
+<summary>Hint</summary>
 
-- **E1** Gate `set_fee` with both a `Signer` and a relationship to `config.admin`. Assert on your custom error, not on a generic transaction failure.
-- **E2** The sentence above each field should be something you could defend in a report. If you cannot write it, the constraint is missing. `token::authority` and `token::mint` are the usual vault proofs.
-- **E3** Space = 8 (discriminator) + every field, with `Pubkey` = 32, `u64` = 8, `u8` bump = 1, and `Option`/`Vec` prefixes as in [00 §10](./00-rust-fundamentals.md#10-serialization-with-borsh). The three close checks are in §6.6: right signer, right recipient, nothing owed.
-- **E4** Measure `received` with `reload()` (or a before/after amount). PDA signer seeds must include the pool. Use `token_interface` so the CPI goes to the program that actually owns the accounts.
-- **E5** Add a variant, don't insert in the middle of an existing error enum (self-check 8).
-- **E6** Work on a branch, one bug at a time, against a program you own. The PoC is a test that the insecure version allows the bad state and the fix rejects it ([01, Part F](./01-solana-foundations.md#part-f-testing-and-your-first-exploit-test)). Do not deploy the broken branch.
-- **E7** You are listing questions, not inventing findings. "I cannot see what pins this account" is a valid question. Compare with [03, part 5.1](./03-solana-security-deep-dive.md#51-amm-raydium-cp-swap).
+Gate `set_fee` with both a `Signer` and a relationship to `config.admin`. Store a bump if you derive `Config` as a PDA (`[b"config"]`). Assert on the error code you defined in `#[error_code]`.
 
 </details>
 
-- [ ] **E1 Setup (sections 1–3).** `anchor init staking`. Add a `Config` with `admin`, `fee_bps`, `bump`; an `initialize_config(fee_bps)` instruction that rejects `fee_bps > 1000`; and `set_fee` gated by `#[access_control]`. Test that a non-admin can't call `set_fee`, asserting on your custom error.
-- [ ] **E2 Accounts and constraints (4–5).** Add a `Pool` per mint (`[b"pool", mint]`) with a vault ATA owned by a `pool_authority` PDA. Write the Accounts struct for `stake(amount)` and, for every field, write the "this account is proven to be …" sentence as a comment above it.
-- [ ] **E3 State (6).** Add a `StakePosition` (`[b"position", pool, user]`) with `shares`, `reward_debt`, `bump`. Compute its `space` by hand and check it equals `8 + INIT_SPACE`. Add `close_position` with all three close checks.
-- [ ] **E4 CPIs and tokens (7, 9).** Implement `stake` (user → vault, `transfer_checked`, measure `received` with `reload()`) and `unstake` (vault → user, PDA signs). Support both Token and Token-2022 with `token_interface`.
-- [ ] **E5 Errors and events (8).** Emit `Staked` and `Unstaked` events. Make every failure path return a specific custom error, and assert on each in tests.
-- [ ] **E6 Break it (12).** Create a branch where you introduce bug patterns 1, 2, 3 and 4 from 12.2, one at a time. For each, write a PoC test that shows the loss. Then fix and keep the test.
-- [ ] **E7 Read someone else's (12.4).** Run the 12.4 checklist on Raydium CP-Swap's `swap_base_input.rs` Accounts struct. List anything you'd question.
+<details>
+<summary>Solution notes</summary>
+
+- `Config` is `#[account]` with space `8 + 32 + 2 + 1` (discriminator, `Pubkey`, `u16`, bump) unless you add more fields.
+- `initialize_config` should `init` the PDA, set `admin = signer`, and `require!(fee_bps <= 1_000, …)`.
+- `set_fee` needs `admin: Signer` and `has_one = admin` (Exercise 1 is the warning if you skip either).
+- The non-admin test builds the same accounts with a second keypair as signer and expects your error, not `self.unwrap()`.
+
+</details>
+
+<a id="exercise-3"></a>
+### Exercise 3 — Accounts and constraints (sections 4–5)
+
+Add a `Pool` per mint, seeds `[b"pool", mint]`, with a vault ATA owned by a `pool_authority` PDA. Write the `Accounts` struct for `stake(amount)` and, for every field, write the "this account is proven to be …" sentence as a comment above it.
+
+**Done when:** the struct compiles, every field has that sentence, and you can point to the constraint that backs each sentence.
+
+<details>
+<summary>Hint</summary>
+
+If you cannot write the sentence, the constraint is missing. `token::mint` and `token::authority` are the usual vault proofs. The authority PDA's seeds must include something that scopes it to *this* pool, not to every pool ([01, exercise 3.4](./01-solana-foundations.md#level-3-anchor-and-tokens-parts-d-e) is the same bug in a claim instruction).
+
+</details>
+
+<details>
+<summary>Solution notes</summary>
+
+A complete `stake` struct typically proves:
+
+- `user` signed;
+- `pool` is this program's `Pool` PDA for `mint`;
+- `user_ata` is a token account of that mint whose token-level `owner` is `user`;
+- `vault` is a token account of that mint whose authority is `pool_authority`;
+- `pool_authority` is the PDA your program will sign for, with seeds that include the pool (or the mint);
+- `token_program` is a pinned `Interface<'info, TokenInterface>` (or `Program<'info, Token>` if you only support legacy Token);
+- the mint is the one stored on `pool`.
+
+A `/// CHECK:` on `pool_authority` with no `seeds` proves nothing.
+
+</details>
+
+<a id="exercise-4"></a>
+### Exercise 4 — State, space, and close (section 6)
+
+Add a `StakePosition` (`[b"position", pool, user]`) with `shares`, `reward_debt`, `bump`. Compute its `space` by hand and check it equals `8 + INIT_SPACE`. Add `close_position` with all three close checks from §6.6.
+
+**Done when:** a unit or print test shows your hand-computed space matches `8 + StakePosition::INIT_SPACE`, and `close_position` will not compile (or will not pass a review checklist) without the right signer, the right recipient, and a "nothing owed" check.
+
+<details>
+<summary>Hint</summary>
+
+Space = 8 (discriminator) + every field, with `Pubkey` = 32, `u64` = 8, `u8` bump = 1, and `Option`/`Vec` prefixes as in [00 §10](./00-rust-fundamentals.md#10-serialization-with-borsh). The three close checks: right signer, right recipient, nothing owed.
+
+</details>
+
+<details>
+<summary>Solution notes</summary>
+
+If the struct is `pool: Pubkey`, `user: Pubkey`, `shares: u64`, `reward_debt: u64`, `bump: u8`, space is `8 + 32 + 32 + 8 + 8 + 1 = 89`. Watch padding if you later switch to zero-copy (`repr(C)` is a different layout; [01, Part A](./01-solana-foundations.md#part-a-rust-applied-to-solana-types)). `close = user` on a position with `shares != 0` (or unclaimed rewards) is bug pattern 4 in §12.2: add `constraint = position.shares == 0` (and the same for `reward_debt` if it is a debt).
+
+</details>
+
+<a id="exercise-5"></a>
+### Exercise 5 — CPIs and tokens (sections 7, 9)
+
+Implement `stake` (user → vault, `transfer_checked`) and `unstake` (vault → user, PDA signs). Measure `received` with `reload()` (or a before/after amount). Support both Token and Token-2022 with `token_interface`.
+
+**Done when:** a test stakes a legacy Token mint and the position's `shares` equal the amount actually received; a second test (or a comment plus a plan) explains what you would measure if the mint had a transfer fee ([01, exercise 4.3](./01-solana-foundations.md#level-4-stretch) / [03 §3.4](./03-solana-security-deep-dive.md#34-token-2022-extensions)).
+
+<details>
+<summary>Hint</summary>
+
+Measure `received` after the CPI; `vault.amount` is stale until `reload()`. PDA signer seeds must include the pool. Use `token_interface` so the CPI goes to the program that actually owns the accounts.
+
+</details>
+
+<details>
+<summary>Solution notes</summary>
+
+```rust
+// Pattern only: measure what arrived, don't credit `amount` blindly.
+let before = ctx.accounts.vault.amount;
+anchor_spl::token_interface::transfer_checked(/* … */)?;
+ctx.accounts.vault.reload()?;
+let received = ctx.accounts.vault.amount
+    .checked_sub(before)
+    .ok_or(ErrorCode::Math)?;
+```
+
+`invoke_signed` / `CpiContext::new_with_signer` uses the *calling* program's ID to derive the PDA. If seeds are `[b"authority"]` with no pool or mint, one authority signs for every vault.
+
+</details>
+
+<a id="exercise-6"></a>
+### Exercise 6 — Errors and events (section 8)
+
+Emit `Staked` and `Unstaked` events. Make every failure path return a specific custom error, and assert on each in tests.
+
+**Done when:** at least three failure cases (non-admin / wrong fee, insufficient stake, close with shares remaining, or similar) each assert on a distinct error, and a successful `stake` emits `Staked` (logged, or checked via whatever your test stack exposes).
+
+<details>
+<summary>Hint</summary>
+
+Add a variant; don't insert in the middle of an existing error enum (self-check 8). Events are not authenticated unless you use `emit_cpi!` — tests that only look at logs must not treat them as a security check.
+
+</details>
+
+<details>
+<summary>Solution notes</summary>
+
+Keep error codes stable: append new variants. `require_keys_eq!` / `require!` should name a dedicated error. A test that only checks `result.is_err()` is too weak; match the error. Do not treat an event log as proof that a CPI moved tokens.
+
+</details>
+
+<a id="exercise-7"></a>
+### Exercise 7 — Break it, then fix it (section 12)
+
+On a **local branch**, introduce bug patterns 1, 2, 3 and 4 from §12.2, one at a time (relationship missing; `has_one` against an unchecked account; `init_if_needed` resetting state; close with something owed). For each, write a test that the insecure version allows the bad state and the fix rejects it ([01, Part F](./01-solana-foundations.md#part-f-testing-and-your-first-exploit-test)). Then fix and keep the test.
+
+**Done when:** four tests fail against the broken branch and pass against the fixed program. Do not deploy the broken branch. Do not write a steal against anyone else's program.
+
+<details>
+<summary>Hint</summary>
+
+One bug at a time so the test names the missing sentence. Pattern 1 is Exercise 1's `SetFee`. Pattern 2: `has_one = admin` while `admin` is `UncheckedAccount`. Pattern 3: `init_if_needed` on `Config` with no "already initialized" path. Pattern 4: you already designed this in Exercise 4.
+
+</details>
+
+<details>
+<summary>Solution notes</summary>
+
+For each pattern, the missing sentence and the fix are already in §12.2. The test is the proof: constructed accounts or a second call that the insecure program accepts and the secure one rejects. Leave the tests in the fixed tree as regressions.
+
+</details>
+
+<a id="exercise-8"></a>
+### Exercise 8 — Read someone else's Accounts struct (section 12.4)
+
+Run the §12.4 checklist on Raydium CP-Swap's `swap_base_input.rs` Accounts struct, in the public repo [raydium-io/raydium-cp-swap](https://github.com/raydium-io/raydium-cp-swap). List anything you would question. You are listing questions, not inventing findings. "I cannot see what pins this account" is a valid question. Compare with [03, part 5.1](./03-solana-security-deep-dive.md#51-amm-raydium-cp-swap).
+
+**Done when:** you have a short note, one line per field or per checklist item, written from the code you actually opened (cite the path and revision if you can).
+
+<details>
+<summary>Hint</summary>
+
+Work field by field: wrapper, constraints, what is still unproven. Look at vault mints, the authority PDA, Token-2022 / transfer-fee handling, and `remaining_accounts` if present. Do not invent a dollar figure or a "Raydium is broken" claim from this exercise alone.
+
+</details>
+
+<details>
+<summary>Solution notes</summary>
+
+There is no single official answer key: the point is the habit. A complete note names the file, walks `swap_base_input`'s accounts, and records questions rather than findings. Anything you still cannot prove belongs in a later [03](./03-solana-security-deep-dive.md#exercises) / [04](./04-advanced-security-and-exploits.md#exercises) pass, not in a made-up report.
+
+</details>
 
 ## Answers to the self-checks
 

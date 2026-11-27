@@ -8,6 +8,8 @@
 
 **This file does not cover:** Rust language basics or the Rust security checklist (those stay in [00](./00-rust-fundamentals.md)); Anchor macros, constraints and Anchor-specific bug patterns (those start in [02](./02-anchor-deep-dive.md)); the Agave runtime, explorer verification, and reading live protocols (those are [03](./03-solana-security-deep-dive.md)); or the full bug-class catalogue and incident write-ups ([04](./04-advanced-security-and-exploits.md)).
 
+**Exercises:** [jump to the Exercises section](#exercises) — graded items with hints and answers in collapsible sections.
+
 ## Learning objectives
 
 By the end of this guide you can:
@@ -1020,9 +1022,10 @@ In an audit, if forging the account is the only way to reach the bug, ask whethe
 2. Write the forged-account test from F.3 as a full test that asserts withdraw fails. Which error do you expect?
 3. What would a PoC need to show for the duplicate-account bug (C.4.3)?
 
+<a id="exercises"></a>
 ## Exercises
 
-Do them in order. Levels 1–3 are the core; level 4 is a stretch. Each exercise is done when it compiles, has at least one test, and you can explain why it works. Tick them off here as you go.
+A graded set in four levels. **Levels 1–3 are required** (twelve exercises); level 4 is stretch (three more). Hints and answers are in collapsible blocks. Rust-only drills stay in [00](./00-rust-fundamentals.md#exercises) — do not redo them here. Do not deploy deliberately broken snippets. Only test programs you wrote, or public educational repos the text names.
 
 ### Level 1: the account model, and spotting a missing check (Parts A, B)
 
@@ -1054,6 +1057,7 @@ fn withdraw(accounts: &[AccountInfo], amount: u64) -> ProgramResult {
   4. Why does `find_program_address` loop downward from bump 255?
   5. An attacker sends 1 lamport to a vault PDA before `initialize`. What happens, and why?
 
+<a id="exercise-1-3"></a>
 - [ ] **1.3 Read-only walkthrough: official programs.** Using only a block explorer and/or the Solana CLI, look up these **documented** program IDs (they are the official System and Token programs; do not substitute a random token):
 
   - System Program: `11111111111111111111111111111111`
