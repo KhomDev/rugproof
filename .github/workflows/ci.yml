@@ -11,11 +11,20 @@ permissions:
 
 jobs:
   exercises:
-    name: Exercises (cargo)
+    name: Exercises (${{ matrix.workspace }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace:
+          - 00-rust-fundamentals
+          - 01-solana-foundations
+          - 02-anchor-deep-dive
+          - 03-solana-security-deep-dive
+          - 04-advanced-security-and-exploits
     defaults:
       run:
-        working-directory: exercises/00-rust-fundamentals
+        working-directory: exercises/${{ matrix.workspace }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -23,20 +32,33 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: exercises/00-rust-fundamentals
+          workspaces: exercises/${{ matrix.workspace }}
       - name: Format
         run: cargo fmt --all -- --check
-      - name: Clippy (solutions)
-        run: cargo clippy -p solutions --all-targets -- -D warnings
-      - name: Test reference solutions (unit, property, adversarial)
+      - name: Clippy (reference crates)
+        run: cargo clippy -p solutions -p capstone-solution --all-targets -- -D warnings
+      - name: Test reference solutions (unit, property, adversarial, integration)
         run: cargo test -p solutions
       - name: Starter compiles (tests are expected to fail until solved)
         run: cargo test -p starter --no-run
+      - name: Capstone (solution green, honest tests green, every exploit test fails on the vulnerable crate)
+        working-directory: .
+        run: bash exercises/scripts/check_capstone.sh exercises/${{ matrix.workspace }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
       - name: Dependency advisories (cargo audit)
         run: cargo audit
+
+  generated:
+    name: Starters and vulnerable capstones in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: python3 exercises/scripts/sync_generated.py --check
 
   links:
     name: Markdown links

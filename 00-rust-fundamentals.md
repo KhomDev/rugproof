@@ -625,6 +625,8 @@ cargo test -p solutions          # the reference answers, all green
 
 The same test suite ([`shared/exercises.rs`](./exercises/00-rust-fundamentals/shared/exercises.rs)) runs against both crates, so when `starter` is green your answers behave like the reference ones, including the property and adversarial tests.
 
+**Capstone (spot the bug, then fix it).** The same workspace has a `capstone/` crate: a points ledger with two planted bugs from [section 13](#13-rust-security-for-on-chain-code). `cargo test -p capstone` runs `exploit_*` tests that fail with `EXPLOIT SUCCEEDED` until you find and fix both. The patched version is in `capstone-solution/`. Hints are in the [workspace README](./exercises/00-rust-fundamentals/README.md#capstone-the-points-ledger-capstone). Every guide has a workspace like this one; see the [exercises index](./exercises/README.md).
+
 ### Level 1: the basics
 
 - [ ] **1.1 `longest`** (lifetimes, §3). Return the longer of two `&str`; on a tie return the first.

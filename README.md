@@ -58,32 +58,32 @@ Already fluent in Rust? Skim 00 and do its Level 3–4 exercises. Already shippi
 
 ## Run the exercises
 
-Every guide has a clearly headed **Exercises** section (eight graded items in 02–04; 00 and 01 have a longer levelled set). Hints and answers are in collapsible blocks. Only guide 00 ships a Cargo workspace; 01–04 live in the guides themselves.
+Every guide has a clearly headed **Exercises** section (eight graded items in 02–04; 00 and 01 have a longer levelled set). Hints and answers are in collapsible blocks. **Every guide also ships a runnable Cargo workspace** in [`exercises/`](./exercises/README.md): practice functions with a deep test suite (unit, property-based, adversarial, integration), plus a **capstone** where you spot the bug and then fix it.
 
-| Guide | Exercises | You'll… |
-| --- | --- | --- |
-| 00 | [14. Exercises](./00-rust-fundamentals.md#exercises) | Fill in a real Cargo crate, then spot red flags in short snippets |
-| 01 | [Exercises](./01-solana-foundations.md#exercises) | Quiz the account model, inspect official programs read-only, build a native vault, port it to Anchor |
-| 02 | [Exercises](./02-anchor-deep-dive.md#exercises) | Read an incomplete Accounts struct, then build a staking pool one instruction at a time |
-| 03 | [Exercises](./03-solana-security-deep-dive.md#exercises) | Quiz core-program invariants, verify authorities on an explorer, audit a described pool |
-| 04 | [Exercises](./04-advanced-security-and-exploits.md#exercises) | Match incidents to missing checks, checklist a described token, write a capstone due-diligence report |
+| Guide | In the guide | Runnable workspace | Capstone (two planted bugs each) |
+| --- | --- | --- | --- |
+| 00 | [14. Exercises](./00-rust-fundamentals.md#exercises): fill in a real crate, spot red flags | [00-rust-fundamentals](./exercises/00-rust-fundamentals/README.md) | Points ledger: wrapping arithmetic, truncating cast |
+| 01 | [Exercises](./01-solana-foundations.md#exercises): account model, official programs, native vault, Anchor port | [01-solana-foundations](./exercises/01-solana-foundations/README.md) | Treasury: missing signer check, missing owner check |
+| 02 | [Exercises](./02-anchor-deep-dive.md#exercises): incomplete Accounts struct, staking pool | [02-anchor-deep-dive](./exercises/02-anchor-deep-dive/README.md) | Airdrop: non-canonical PDA bump, missing `has_one` |
+| 03 | [Exercises](./03-solana-security-deep-dive.md#exercises): core-program invariants, explorer checks, pool audit | [03-solana-security-deep-dive](./exercises/03-solana-security-deep-dive/README.md) | Share vault: arbitrary CPI, substituted token account |
+| 04 | [Exercises](./04-advanced-security-and-exploits.md#exercises): incident quiz, token checklist, due-diligence report | [04-advanced-security-and-exploits](./exercises/04-advanced-security-and-exploits/README.md) | Lending market: spot-price oracle, limit ignores existing debt |
 
-There is also an [exercises/](./exercises/README.md) index.
-
-Guide 00's workspace needs [Rust](https://rustup.rs) (stable):
+The workspaces need only [Rust](https://rustup.rs) (stable). No validator, wallet or network:
 
 ```bash
 git clone https://github.com/KhomDev/rugproof.git
-cd rugproof/exercises/00-rust-fundamentals
+cd rugproof/exercises/01-solana-foundations   # or any 0N-* folder
 
-cargo test -p starter        # your work: fails until you replace the todo!()s
-cargo test -p starter l1_    # only Level 1
-cargo test -p solutions      # reference answers: all green
+cargo test -p starter            # your work: fails until you replace the todo!()s
+cargo test -p starter l1_        # one level at a time
+cargo test -p solutions          # reference answers: all green
+cargo test -p capstone           # exploit_* tests fail until you find and fix the bugs
+cargo test -p capstone-solution  # the patched capstone: all green
 ```
 
-The same unit, property-based and adversarial tests run against both crates, so a green `starter` means your answers hold up against the same attacks as the reference ones.
+The same tests run against `starter` and `solutions`, so a green `starter` means your answers hold up against the same attacks as the reference ones. In each capstone, every `exploit_*` test plays the attacker locally against a toy program, and CI checks that each one really fails on the flawed version.
 
-Guides 01–04 tell you what to install (Solana/Agave CLI, Anchor, LiteSVM) when a task needs it. Vulnerable snippets are for detection: don't deploy them. Only run tests against programs you wrote, or against public educational repos the guide names.
+Guides 01–04 also tell you what to install (Solana/Agave CLI, Anchor, LiteSVM) when a task needs the real toolchain. Vulnerable snippets are for detection: don't deploy them. Only run tests against programs you wrote, or against public educational repos the guide names.
 
 ## How to read the confidence tags
 
