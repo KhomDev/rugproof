@@ -4,6 +4,8 @@
 /// `Pubkey::create_program_address`: sha256(seeds.. || [bump] ||
 /// program_id || "ProgramDerivedAddress"); reject on-curve results
 /// (`InvalidSeeds`) and seeds over the limits (`MaxSeedLengthExceeded`).
+use super::*;
+
 pub fn create_program_address(
     seeds: &[&[u8]],
     bump: u8,

@@ -81,7 +81,7 @@ cargo test -p capstone           # exploit_* tests fail until you find and fix t
 cargo test -p capstone-solution  # the patched capstone: all green
 ```
 
-The stubs you fill in are in `starter/src/lib.rs`. The full test suite is in `starter/tests/exercises.rs` (it includes `shared/exercises.rs`) and the same file is run against `solutions/`, so a green `starter` means your answers hold up against the same attacks as the reference ones. `cargo test` from inside `starter/` or `solutions/` also works. In each capstone, every `exploit_*` test plays the attacker locally against a toy program, and CI checks that each one really fails on the flawed version.
+The stubs you fill in are in `starter/src/lib.rs`. The full test suite is in `starter/tests/exercises.rs` and the same tests run against `solutions/`, so a green `starter` means your answers hold up against the same attacks as the reference ones. `cargo test` from inside `starter/` or `solutions/` also works. In each capstone, every `exploit_*` test plays the attacker locally against a toy program, and CI checks that each one really fails on the flawed version.
 
 ### Windows setup
 

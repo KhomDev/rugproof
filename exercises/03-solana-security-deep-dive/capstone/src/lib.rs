@@ -14,7 +14,8 @@
 //!
 //! Local toy only: no real addresses, no network, nothing to deploy.
 
-include!("../../shared/model.rs");
+mod model;
+pub use model::*;
 
 use std::collections::BTreeMap;
 

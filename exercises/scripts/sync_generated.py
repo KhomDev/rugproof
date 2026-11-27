@@ -12,10 +12,18 @@
   `capstone-solution/src/lib.rs`: every block from a `// FIX` line to its
   `// END FIX` line is removed, `// WAS: <code>` comments become code
   again, and a trailing `#[cfg(test)] mod tests` is dropped.
+* Each crate has its own copy of the test file and model modules. Copies kept in sync:
+  - `solutions/tests/exercises.rs` is the source for
+    `starter/tests/exercises.rs` (only the `extern crate` line differs)
+  - `capstone-solution/tests/capstone.rs` is the source for
+    `capstone/tests/capstone.rs` (only the `extern crate` line differs)
+  - `solutions/src/model.rs` and `solutions/src/pda_base.rs` (when present)
+    are copied to `starter`, `capstone` and `capstone-solution`
+  - `capstone-solution/src/pda.rs` (guide 02) is copied to `capstone`
 
-The generated file keeps its own leading `#![...]` / `//!` header, so edit
-headers in the generated files and everything else in the reference ones.
-Run `cargo fmt` in the workspace afterwards.
+The generated `lib.rs` keeps its own leading `#![...]` / `//!` header, so
+edit headers in the generated files and everything else in the reference
+ones. Run `cargo fmt` in the workspace afterwards.
 """
 import pathlib
 import re
@@ -98,6 +106,63 @@ def make_vulnerable(solution):
     return out
 
 
+def write_text(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
+def read_text(path):
+    return path.read_text(encoding="utf-8")
+
+
+def swap_extern_crate(text, crate_name):
+    new, n = re.subn(
+        r"^extern crate \w+ as (ex|cap);",
+        rf"extern crate {crate_name} as \1;",
+        text,
+        count=1,
+        flags=re.M,
+    )
+    if n != 1:
+        raise SystemExit(
+            f"expected exactly one `extern crate ... as ex|cap` line, found {n}"
+        )
+    return new
+
+
+def sync_copies(check, stale):
+    for ws in sorted(ROOT.glob("0[0-9]-*")):
+        jobs = [
+            (
+                ws / "solutions/tests/exercises.rs",
+                ws / "starter/tests/exercises.rs",
+                lambda t: swap_extern_crate(t, "starter"),
+            ),
+            (
+                ws / "capstone-solution/tests/capstone.rs",
+                ws / "capstone/tests/capstone.rs",
+                lambda t: swap_extern_crate(t, "capstone"),
+            ),
+        ]
+        for name in ("model.rs", "pda_base.rs"):
+            src = ws / "solutions/src" / name
+            if src.exists():
+                for dest_crate in ("starter", "capstone", "capstone-solution"):
+                    jobs.append((src, ws / dest_crate / "src" / name, None))
+        pda = ws / "capstone-solution/src/pda.rs"
+        if pda.exists():
+            jobs.append((pda, ws / "capstone/src/pda.rs", None))
+        for src, dst, transform in jobs:
+            text = read_text(src)
+            if transform:
+                text = transform(text)
+            current = read_text(dst) if dst.exists() else None
+            if current != text:
+                stale.append(str(dst.relative_to(ROOT)))
+                if not check:
+                    write_text(dst, text)
+
+
 def main():
     check = "--check" in sys.argv
     stale = []
@@ -107,15 +172,21 @@ def main():
             jobs.append((ws / "solutions/src/lib.rs", ws / "starter/src/lib.rs", make_starter))
         jobs.append((ws / "capstone-solution/src/lib.rs", ws / "capstone/src/lib.rs", make_vulnerable))
     for src, dst, fn in jobs:
-        header, _ = split_header(dst.read_text())
-        new = "\n".join(header + fn(src.read_text()))
+        header, _ = split_header(read_text(dst))
+        new = "\n".join(header + fn(read_text(src)))
         # format exactly like `cargo fmt` would, so --check is stable
-        new = subprocess.run(["rustfmt", "--edition", "2021", "--emit", "stdout", "-q"],
-                             input=new, capture_output=True, text=True, check=True).stdout
-        if dst.read_text() != new:
+        new = subprocess.run(
+            ["rustfmt", "--edition", "2021", "--emit", "stdout", "-q"],
+            input=new,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        if read_text(dst) != new:
             stale.append(str(dst.relative_to(ROOT)))
             if not check:
-                dst.write_text(new)
+                write_text(dst, new)
+    sync_copies(check, stale)
     if check and stale:
         print("stale generated files (run exercises/scripts/sync_generated.py):")
         print("\n".join("  " + s for s in stale))

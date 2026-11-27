@@ -3,8 +3,10 @@
 //! generates for you, so you can see exactly what `Account<'info, T>`,
 //! `has_one`, `seeds`/`bump`, `Signer` and `InitSpace` really do.
 
-include!("../../shared/model.rs");
-include!("../../shared/pda_base.rs");
+mod model;
+pub use model::*;
+mod pda_base;
+pub use pda_base::*;
 
 // ---------------------------------------------------------------- Level 1
 

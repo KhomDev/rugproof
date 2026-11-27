@@ -1,7 +1,8 @@
 //! Capstone 01, patched. Compare with `../capstone/src/lib.rs`.
 //! Each `// FIX` block is a check the vulnerable version forgot.
 
-include!("../../shared/model.rs");
+mod model;
+pub use model::*;
 
 /// Stored in a program-owned account: who may withdraw from which treasury.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]

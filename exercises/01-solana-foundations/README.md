@@ -2,7 +2,7 @@
 
 Runnable practice for [01 · Solana Foundations](../../01-solana-foundations.md#exercises). It needs only [Rust](https://rustup.rs) (stable): no Solana CLI, no validator, no network.
 
-The crates use a small pure-Rust model of the account model ([`shared/model.rs`](./shared/model.rs)): `Pubkey`, `AccountInfo` (key, owner, lamports, data, signer, writable, executable) and a subset of `ProgramError`. The checks you write are the same ones a real `solana_program` processor needs. The model just leaves out the parts that would need a validator. When you are ready for the real thing, the guide's native vault, Anchor port and LiteSVM exercises take it from there.
+The crates use a small pure-Rust model of the account model ([`starter/src/model.rs`](./starter/src/model.rs)): `Pubkey`, `AccountInfo` (key, owner, lamports, data, signer, writable, executable) and a subset of `ProgramError`. The checks you write are the same ones a real `solana_program` processor needs. The model just leaves out the parts that would need a validator. When you are ready for the real thing, the guide's native vault, Anchor port and LiteSVM exercises take it from there.
 
 ```bash
 cd exercises/01-solana-foundations
@@ -13,7 +13,7 @@ cargo test -p capstone           # the capstone: exploit_* tests fail until you 
 cargo test -p capstone-solution  # the patched capstone: all green
 ```
 
-The functions you edit are in `starter/src/lib.rs`. The full test suite is in [`starter/tests/exercises.rs`](./starter/tests/exercises.rs) (it includes [`shared/exercises.rs`](./shared/exercises.rs)) and is also run against `solutions/`. `cargo test` from inside `starter/` or `solutions/` works too.
+The functions you edit are in `starter/src/lib.rs`. The full test suite is in [`starter/tests/exercises.rs`](./starter/tests/exercises.rs) and is also run against `solutions/`. `cargo test` from inside `starter/` or `solutions/` works too.
 
 ## Exercises (`starter/`)
 
@@ -28,7 +28,7 @@ The functions you edit are in `starter/src/lib.rs`. The full test suite is in [`
 | 3.1 | `load_counter` | state is trusted only after the owner, length and discriminator checks |
 | 3.2 | `process_instruction` | a whole native counter program (initialize / increment / close) validates everything before it writes, and a closed counter cannot be revived |
 
-The suite ([`shared/exercises.rs`](./shared/exercises.rs)) has 19 tests: unit tests, adversarial cases (attacker-owned look-alike accounts, unsigned authorities, close-to-self, overflow) and property tests. The strongest is an integration property: whatever accounts and bytes an attacker sends, your program never panics, never breaks a runtime rule from 2.3, and a failed instruction changes nothing.
+The suite in [`starter/tests/exercises.rs`](./starter/tests/exercises.rs) has 19 tests: unit tests, adversarial cases (attacker-owned look-alike accounts, unsigned authorities, close-to-self, overflow) and property tests. The strongest is an integration property: whatever accounts and bytes an attacker sends, your program never panics, never breaks a runtime rule from 2.3, and a failed instruction changes nothing.
 
 ## Capstone: the treasury (`capstone/`)
 

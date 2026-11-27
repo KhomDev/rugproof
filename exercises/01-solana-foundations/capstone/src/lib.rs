@@ -14,7 +14,8 @@
 //!
 //! Local toy only: no real addresses, no network, nothing to deploy.
 
-include!("../../shared/model.rs");
+mod model;
+pub use model::*;
 
 /// Stored in a program-owned account: who may withdraw from which treasury.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]

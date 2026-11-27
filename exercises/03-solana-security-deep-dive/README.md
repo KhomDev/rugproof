@@ -2,7 +2,7 @@
 
 Runnable practice for [03 · Solana Security Deep-Dive](../../03-solana-security-deep-dive.md#exercises). It needs only [Rust](https://rustup.rs) (stable).
 
-The guide's runtime and SPL Token invariants are written here as code. The model ([`shared/model.rs`](./shared/model.rs)) adds SPL Token `Mint` / `TokenAccount` state and stand-in program and sysvar ids. These are toy byte values, not the real base58 keys.
+The guide's runtime and SPL Token invariants are written here as code. The model ([`starter/src/model.rs`](./starter/src/model.rs)) adds SPL Token `Mint` / `TokenAccount` state and stand-in program and sysvar ids. These are toy byte values, not the real base58 keys.
 
 ```bash
 cd exercises/03-solana-security-deep-dive
@@ -12,7 +12,7 @@ cargo test -p capstone           # exploit_* tests fail until you fix the bugs
 cargo test -p capstone-solution
 ```
 
-The functions you edit are in `starter/src/lib.rs`. The full test suite is in [`starter/tests/exercises.rs`](./starter/tests/exercises.rs) (it includes [`shared/exercises.rs`](./shared/exercises.rs)) and is also run against `solutions/`. `cargo test` from inside `starter/` or `solutions/` works too.
+The functions you edit are in `starter/src/lib.rs`. The full test suite is in [`starter/tests/exercises.rs`](./starter/tests/exercises.rs) and is also run against `solutions/`. `cargo test` from inside `starter/` or `solutions/` works too.
 
 ## Exercises (`starter/`)
 
@@ -28,7 +28,7 @@ The functions you edit are in `starter/src/lib.rs`. The full test suite is in [`
 | 3.2 | `initialize_vault`, `close_account` | one-time init, safe close, no revival |
 | 3.3 | `audit` | the audit checklist as code: given how a handler uses each account, list every missing check |
 
-The suite ([`shared/exercises.rs`](./shared/exercises.rs)) has 17 tests. They include an integration property where random transfers between three accounts by random signers must conserve supply and keep a delegate inside its allowance.
+The suite in [`starter/tests/exercises.rs`](./starter/tests/exercises.rs) has 17 tests. They include an integration property where random transfers between three accounts by random signers must conserve supply and keep a delegate inside its allowance.
 
 ## Capstone: the share vault (`capstone/`)
 
