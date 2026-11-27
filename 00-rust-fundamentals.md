@@ -14,7 +14,16 @@
 
 Solana programs are written in a narrow but demanding slice of Rust. You don't need all of Rust to start, but the parts you do need (borrowing, lifetimes, traits, error handling, integer behaviour and byte layouts) show up in every program and in almost every bug. This guide teaches exactly those parts, each with a small example and a note on where it appears on Solana.
 
-Every section ends with a pointer to a graded exercise. The exercises are a real Cargo workspace in [`exercises/00-rust-fundamentals`](./exercises/00-rust-fundamentals): fill in the `todo!()`s in `starter/`, and run the tests until they pass. Reference answers live in `solutions/` and in collapsible blocks below. Hints are also in collapsible blocks: try the tests first, then open a hint, then the answer.
+Every section ends with a pointer to a graded exercise. The exercises are a real Cargo workspace in [`exercises/00-rust-fundamentals`](./exercises/00-rust-fundamentals). Fill in the `todo!()`s in [`starter/src/lib.rs`](./exercises/00-rust-fundamentals/starter/src/lib.rs), then run the full test suite until it passes:
+
+```bash
+cd exercises/00-rust-fundamentals
+cargo test -p starter            # fails on the unsolved `todo!()`s
+cargo test -p starter l1_        # just Level 1
+cargo test -p solutions          # reference answers, all green
+```
+
+The tests are not inside `starter/src/lib.rs`. The suite lives in [`starter/tests/exercises.rs`](./exercises/00-rust-fundamentals/starter/tests/exercises.rs), which includes the shared file [`shared/exercises.rs`](./exercises/00-rust-fundamentals/shared/exercises.rs). The same suite also runs against `solutions/`. You can also `cd` into `starter/` or `solutions/` and run `cargo test` there. Reference answers live in `solutions/` and in collapsible blocks below. Hints are also in collapsible blocks: try the tests first, then open a hint, then the answer.
 
 ## Learning objectives
 
@@ -623,7 +632,7 @@ cargo test -p starter l1_        # just level 1
 cargo test -p solutions          # the reference answers, all green
 ```
 
-The same test suite ([`shared/exercises.rs`](./exercises/00-rust-fundamentals/shared/exercises.rs)) runs against both crates, so when `starter` is green your answers behave like the reference ones, including the property and adversarial tests.
+The stubs you edit are in `starter/src/lib.rs`. The full test suite is in [`starter/tests/exercises.rs`](./exercises/00-rust-fundamentals/starter/tests/exercises.rs) (it includes [`shared/exercises.rs`](./exercises/00-rust-fundamentals/shared/exercises.rs)) and is also run against `solutions/`. When `starter` is green, your answers behave like the reference ones, including the property and adversarial tests.
 
 **Capstone (spot the bug, then fix it).** The same workspace has a `capstone/` crate: a points ledger with two planted bugs from [section 13](#13-rust-security-for-on-chain-code). `cargo test -p capstone` runs `exploit_*` tests that fail with `EXPLOIT SUCCEEDED` until you find and fix both. The patched version is in `capstone-solution/`. Hints are in the [workspace README](./exercises/00-rust-fundamentals/README.md#capstone-the-points-ledger-capstone). Every guide has a workspace like this one; see the [exercises index](./exercises/README.md).
 

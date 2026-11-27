@@ -1,0 +1,8 @@
+# Pin a toolchain that can parse crates.io manifests using edition 2024
+# (for example cpufeatures 0.3). Edition 2024 is stable since Rust 1.85;
+# 1.95.0 is the version verified with these exercise workspaces.
+# rustup installs this channel automatically when you enter the repo.
+# Do not change your global rustup default for this.
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]

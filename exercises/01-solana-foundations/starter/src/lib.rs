@@ -1,6 +1,8 @@
 #![allow(unused_variables)]
 //! Starter code for guide 01 (Solana Foundations).
-//! Replace every `todo!()` and run `cargo test -p starter`.
+//! Replace every `todo!()` in this file.
+//! The full test suite is in `tests/exercises.rs` (it includes `../shared/exercises.rs`).
+//! Run `cargo test -p starter` from the workspace root, or `cargo test` from `starter/`.
 //! The account model is in `../shared/model.rs`. Stuck? Reference answers are in `../solutions`.
 
 include!("../../shared/model.rs");

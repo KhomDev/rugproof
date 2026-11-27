@@ -14,6 +14,8 @@ cargo test -p capstone           # exploit_* tests fail until you fix the bugs
 cargo test -p capstone-solution
 ```
 
+The functions you edit are in `starter/src/lib.rs`. The full test suite is in [`starter/tests/exercises.rs`](./starter/tests/exercises.rs) (it includes [`shared/exercises.rs`](./shared/exercises.rs)) and is also run against `solutions/`. `cargo test` from inside `starter/` or `solutions/` works too.
+
 ## Exercises (`starter/`)
 
 | # | Function | Anchor feature it re-implements |
