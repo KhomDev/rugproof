@@ -1,0 +1,15 @@
+[workspace]
+members = ["starter", "solutions", "capstone", "capstone-solution"]
+resolver = "2"
+
+[workspace.dependencies]
+borsh = { version = "1", features = ["derive"] }
+thiserror = "2"
+proptest = "1"
+sha2 = "0.10"
+
+[profile.dev]
+overflow-checks = true
+
+[profile.release]
+overflow-checks = true

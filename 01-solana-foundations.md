@@ -1025,6 +1025,8 @@ In an audit, if forging the account is the only way to reach the bug, ask whethe
 <a id="exercises"></a>
 ## Exercises
 
+> **Runnable workspace:** [`exercises/01-solana-foundations`](./exercises/01-solana-foundations/README.md) has Cargo exercises for this guide, built on a pure-Rust model of the account model. They cover rent, ownership and signer checks, the runtime's account rules, and a whole native counter program (19 tests). It also has a **capstone**: a **treasury** with a missing signer check and a missing owner check. Its `exploit_*` tests fail until you find and fix both bugs. You need only Rust: `cd exercises/01-solana-foundations && cargo test -p starter`. The guide exercises below go further with the real toolchain.
+
 A graded set in four levels. **Levels 1–3 are required** (twelve exercises); level 4 is stretch (three more). Hints and answers are in collapsible blocks. Rust-only drills stay in [00](./00-rust-fundamentals.md#exercises) — do not redo them here. Do not deploy deliberately broken snippets. Only test programs you wrote, or public educational repos the text names.
 
 ### Level 1: the account model, and spotting a missing check (Parts A, B)

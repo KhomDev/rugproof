@@ -705,6 +705,8 @@ Checked while writing (2026-11-26, verification links added 2026-11-27): Solana 
 <a id="exercises"></a>
 ## Exercises
 
+> **Runnable workspace:** [`exercises/03-solana-security-deep-dive`](./exercises/03-solana-security-deep-dive/README.md) has Cargo exercises for this guide: the runtime and Token invariants from this guide as code: owner and duplicate checks, `TransferChecked` rules, arbitrary CPI, fake sysvars, re-init and revival, and the audit checklist itself (17 tests). It also has a **capstone**: a **share vault** with an arbitrary CPI and a substituted token account. Its `exploit_*` tests fail until you find and fix both bugs. You need only Rust: `cd exercises/03-solana-security-deep-dive && cargo test -p starter`. The guide exercises below go further with the real toolchain.
+
 Eight exercises, easy to hard, on this guide's material: runtime invariants, core programs, read-only verification, CPIs, and the bug-class map. Anchor wrappers and constraints were practised in [02](./02-anchor-deep-dive.md#exercises). The full vulnerable-vs-fixed catalogue and the capstone report are [04](./04-advanced-security-and-exploits.md#exercises).
 
 Reading and verification only, unless a step asks you to test a program you own or a public educational repo the text names. Do not invent addresses, dates or loss figures. Do not deploy broken examples.
