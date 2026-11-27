@@ -1,5 +1,5 @@
 // A pure-Rust model of what an Anchor program sees, shared by every crate in
-// this workspace through `include!`. Nothing here talks to a validator or a
+// this workspace Nothing here talks to a validator or a
 // network: it is the smallest set of types that lets the exercises express
 // the same checks a real program must write.
 

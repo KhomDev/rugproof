@@ -1,12 +1,13 @@
 #![allow(unused_variables)]
 //! Starter code for guide 03 (Solana Security Deep-Dive).
 //! Replace every `todo!()` in this file.
-//! The full test suite is in `tests/exercises.rs` (it includes `../shared/exercises.rs`).
+//! The full test suite is in `tests/exercises.rs`.
 //! Run `cargo test -p starter` from the workspace root, or `cargo test` from `starter/`.
-//! Model types (accounts, SPL Token state, errors): `../shared/model.rs`.
+//! Model types (accounts, SPL Token state, errors): `src/model.rs`.
 //! Stuck? Reference answers are in `../solutions`.
 
-include!("../../shared/model.rs");
+mod model;
+pub use model::*;
 
 // ---------------------------------------------------------------- Level 1
 

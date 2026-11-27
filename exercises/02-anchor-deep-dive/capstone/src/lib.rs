@@ -16,9 +16,12 @@
 //!
 //! Local toy only: no real addresses, no network, nothing to deploy.
 
-include!("../../shared/model.rs");
-include!("../../shared/pda_base.rs");
-include!("../../shared/pda.rs");
+mod model;
+pub use model::*;
+mod pda_base;
+pub use pda_base::*;
+mod pda;
+pub use pda::*;
 
 pub const RECEIPT_SEED: &[u8] = b"receipt";
 

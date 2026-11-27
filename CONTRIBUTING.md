@@ -14,8 +14,9 @@ Thanks for helping make Rugproof better. Corrections, clearer explanations, fixe
 1. Fork the repo and create a branch.
 2. For guide text: keep the existing structure (objectives, prerequisites, sections, exercises, further reading, previous/next links).
 3. For exercises (any `exercises/0N-*` workspace; see [exercises/README.md](./exercises/README.md)):
-   - Put new tests in `shared/exercises.rs` (or `shared/capstone.rs`) so they run against both crates of the pair.
+   - Put new tests in `solutions/tests/exercises.rs` (or `capstone-solution/tests/capstone.rs`) and run `python3 exercises/scripts/sync_generated.py` so the copy in `starter/tests/exercises.rs` (or `capstone/tests/capstone.rs`) stays in sync.
    - Edit the reference crates (`solutions/`, `capstone-solution/`). For guides 01–04, `starter/` and every `capstone/` are generated: run `python3 exercises/scripts/sync_generated.py` afterwards. Guide 00's `starter/` is hand-written: add a `todo!()` stub there yourself.
+   - Edit model types in `solutions/src/model.rs` (and `pda_base.rs` when present), then run the same sync script so the copies in the other crates match.
    - Capstone bugs live in `// FIX` ... `// END FIX` blocks in `capstone-solution/`. A `// WAS: <code>` line under a block is the vulnerable line the generator puts back. Every `exploit_*` test must fail on the vulnerable crate. Check with `bash exercises/scripts/check_capstone.sh exercises/0N-...`.
    - Keep capstones local toys: no real addresses, no mainnet targets, nothing deployable.
    - In the workspace, run `cargo fmt --all`, `cargo clippy -p solutions -p capstone-solution --all-targets -- -D warnings` and `cargo test -p solutions -p capstone-solution`. The repo is pinned to Rust 1.95.0 via [`rust-toolchain.toml`](./rust-toolchain.toml). On Windows without Visual Studio Build Tools, follow [Windows setup](./README.md#windows-setup).

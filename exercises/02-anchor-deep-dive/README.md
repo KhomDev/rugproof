@@ -2,7 +2,7 @@
 
 Runnable practice for [02 · Anchor Deep-Dive](../../02-anchor-deep-dive.md#exercises). It needs only [Rust](https://rustup.rs) (stable): no Anchor CLI, no validator.
 
-Each exercise writes out, in plain Rust, a check that an Anchor macro generates for you. You see exactly what `Account<'info, T>`, `#[derive(InitSpace)]`, `has_one`, `seeds` + `bump` and `Signer` do, and what happens when one is missing. The model is in [`shared/model.rs`](./shared/model.rs), and SHA-256 and PDA helpers are in [`shared/pda_base.rs`](./shared/pda_base.rs).
+Each exercise writes out, in plain Rust, a check that an Anchor macro generates for you. You see exactly what `Account<'info, T>`, `#[derive(InitSpace)]`, `has_one`, `seeds` + `bump` and `Signer` do, and what happens when one is missing. The model is in [`starter/src/model.rs`](./starter/src/model.rs), and SHA-256 and PDA helpers are in [`starter/src/pda_base.rs`](./starter/src/pda_base.rs).
 
 > **Toy curve.** Discriminators use real SHA-256: `sighash("global", "initialize")` gives Anchor's real bytes. PDA derivation uses the real hash input order and the real bump search, but the on-curve test is a stand-in that rejects about half of all hashes, like the real ed25519 check. So addresses differ from mainnet. The logic is the same.
 
@@ -14,7 +14,7 @@ cargo test -p capstone           # exploit_* tests fail until you fix the bugs
 cargo test -p capstone-solution
 ```
 
-The functions you edit are in `starter/src/lib.rs`. The full test suite is in [`starter/tests/exercises.rs`](./starter/tests/exercises.rs) (it includes [`shared/exercises.rs`](./shared/exercises.rs)) and is also run against `solutions/`. `cargo test` from inside `starter/` or `solutions/` works too.
+The functions you edit are in `starter/src/lib.rs`. The full test suite is in [`starter/tests/exercises.rs`](./starter/tests/exercises.rs) and is also run against `solutions/`. `cargo test` from inside `starter/` or `solutions/` works too.
 
 ## Exercises (`starter/`)
 
@@ -29,7 +29,7 @@ The functions you edit are in `starter/src/lib.rs`. The full test suite is in [`
 | 3.2 | `set_fee` | `has_one = admin`, `Signer`, `bump = config.bump` |
 | 3.3 | `distribute`, `pending`, `stake`, `unstake` | the staking pool from the guide's exercises 2–8, MasterChef-style reward accounting |
 
-The suite ([`shared/exercises.rs`](./shared/exercises.rs)) has 19 tests. One property test, `prop_pool_is_solvent`, runs random stake / unstake / distribute sequences and checks the pool never pays more rewards than it received. It caught a real 1-unit over-payment in the textbook "round everything down" version, which is why `reward_debt` rounds **up**. Read the doc comment on `pending`.
+The suite in [`starter/tests/exercises.rs`](./starter/tests/exercises.rs) has 19 tests. One property test, `prop_pool_is_solvent`, runs random stake / unstake / distribute sequences and checks the pool never pays more rewards than it received. It caught a real 1-unit over-payment in the textbook "round everything down" version, which is why `reward_debt` rounds **up**. Read the doc comment on `pending`.
 
 ## Capstone: the airdrop distributor (`capstone/`)
 

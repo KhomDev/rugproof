@@ -1,7 +1,8 @@
 //! Capstone 03, patched. Compare with `../capstone/src/lib.rs`.
 //! Each `// FIX` block is a check the vulnerable version forgot.
 
-include!("../../shared/model.rs");
+mod model;
+pub use model::*;
 
 use std::collections::BTreeMap;
 

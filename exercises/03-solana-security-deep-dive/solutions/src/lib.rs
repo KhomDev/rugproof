@@ -2,7 +2,8 @@
 //! Runtime and SPL Token invariants written out as code: every function is
 //! one sentence from the guide's checklists that a program must make true.
 
-include!("../../shared/model.rs");
+mod model;
+pub use model::*;
 
 // ---------------------------------------------------------------- Level 1
 

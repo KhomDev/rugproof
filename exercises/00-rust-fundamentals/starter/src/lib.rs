@@ -1,7 +1,7 @@
 #![allow(unused_variables)]
 //! Starter code for guide 00 (Rust Fundamentals).
 //! Replace every `todo!()` in this file.
-//! The full test suite is in `tests/exercises.rs` (it includes `../shared/exercises.rs`).
+//! The full test suite is in `tests/exercises.rs`.
 //! Run `cargo test -p starter` from the workspace root, or `cargo test` from `starter/`.
 //! Stuck? Reference answers are in `../solutions`.
 

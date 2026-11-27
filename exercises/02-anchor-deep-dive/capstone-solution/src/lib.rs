@@ -1,9 +1,12 @@
 //! Capstone 02, patched. Compare with `../capstone/src/lib.rs`.
 //! Each `// FIX` block is a constraint the vulnerable version forgot.
 
-include!("../../shared/model.rs");
-include!("../../shared/pda_base.rs");
-include!("../../shared/pda.rs");
+mod model;
+pub use model::*;
+mod pda_base;
+pub use pda_base::*;
+mod pda;
+pub use pda::*;
 
 pub const RECEIPT_SEED: &[u8] = b"receipt";
 

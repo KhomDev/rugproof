@@ -1,8 +1,9 @@
 //! Reference solutions for guide 01 (Solana Foundations).
-//! The account model lives in `../shared/model.rs`; every exercise here is a
+//! The account model lives in `src/model.rs`; every exercise here is a
 //! check a real Solana program (or the runtime itself) has to perform.
 
-include!("../../shared/model.rs");
+mod model;
+pub use model::*;
 
 // ---------------------------------------------------------------- Level 1
 

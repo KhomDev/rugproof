@@ -14,16 +14,16 @@ Every Rugproof guide has a graded **Exercises** section in the guide itself, wit
 
 ```text
 0N-guide-name/
-├── starter/            your work: todo!() stubs in src/lib.rs
-│   └── tests/exercises.rs   full suite (includes shared/exercises.rs)
-├── solutions/          reference answers                  cargo test -p solutions
+├── starter/                 your work: todo!() stubs in src/lib.rs
+│   ├── src/model.rs         account model (guides 01–04)
+│   └── tests/exercises.rs   full suite (the #[test] functions are in this file)
+├── solutions/               reference answers                  cargo test -p solutions
+│   ├── src/model.rs         the same model
 │   └── tests/exercises.rs   the same suite
-├── capstone/           a deliberately flawed program      cargo test -p capstone
-├── capstone-solution/  the same program, patched          cargo test -p capstone-solution
-└── shared/
-    ├── exercises.rs    one test suite, run against starter AND solutions
-    ├── capstone.rs     one test suite, run against capstone AND capstone-solution
-    └── model.rs        the small pure-Rust model of accounts, tokens, prices...
+├── capstone/                a deliberately flawed program      cargo test -p capstone
+│   └── tests/capstone.rs    capstone tests (visible #[test] functions)
+└── capstone-solution/       the same program, patched          cargo test -p capstone-solution
+    └── tests/capstone.rs    the same capstone suite
 ```
 
 `cargo test -p starter` (from the workspace folder) or `cargo test` from inside `starter/` runs that suite. The tests fail on unsolved `todo!()`s and pass on `solutions/`.
