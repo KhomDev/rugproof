@@ -2,13 +2,20 @@
 
 > **Rugproof** · Start of the series · [Series overview](./README.md) · [01 · Solana Foundations](./01-solana-foundations.md) →
 
+**Prerequisites:** comfort with any programming language; Rust installed with [`rustup`](https://rustup.rs) (stable). Optional: the first few chapters of [The Rust Book](https://doc.rust-lang.org/book/).
+
+**This file covers:** the slice of Rust that Solana programs actually use — Cargo and modules, ownership, lifetimes, structs and enums, `Result`/`thiserror`, traits, iterators, `Rc`/`RefCell`, integer overflow and rounding, Borsh, tests, `unsafe`/`no_std` recognition, and the Rust-level security habits in §13. This is the home for those ideas. Later guides link here instead of teaching them again.
+
+**This file does not cover:** the Solana account model, PDAs, tokens, Anchor, or real incidents. Those start in [01](./01-solana-foundations.md) and finish in [04](./04-advanced-security-and-exploits.md).
+
 ## How to use this guide
 
 Solana programs are written in a narrow but demanding slice of Rust. You don't need all of Rust to start, but the parts you do need (borrowing, lifetimes, traits, error handling, integer behaviour and byte layouts) show up in every program and in almost every bug. This guide teaches exactly those parts, each with a small example and a note on where it appears on Solana.
 
-Every section ends with a pointer to a graded exercise. The exercises are a real Cargo workspace in [`exercises/00-rust-fundamentals`](./exercises/00-rust-fundamentals): fill in the `todo!()`s in `starter/`, and run the tests until they pass. Reference answers live in `solutions/` and in collapsible blocks below.
+Every section ends with a pointer to a graded exercise. The exercises are a real Cargo workspace in [`exercises/00-rust-fundamentals`](./exercises/00-rust-fundamentals): fill in the `todo!()`s in `starter/`, and run the tests until they pass. Reference answers live in `solutions/` and in collapsible blocks below. Hints are also in collapsible blocks: try the tests first, then open a hint, then the answer.
 
 ## Learning objectives
+
 
 By the end of this guide you can:
 
@@ -21,11 +28,6 @@ By the end of this guide you can:
 - Predict the exact Borsh bytes of a struct
 - Spot the Rust-level bugs behind Solana findings (overflow, panics, truncating casts, rounding, decoder bugs, `RefCell` misuse, SBF limits, `unsafe`) and set up the tools that catch them: security clippy lints, `cargo audit`/`cargo deny`, property tests and fuzzers
 
-## Prerequisites
-
-- Comfort with any programming language
-- Rust installed with [`rustup`](https://rustup.rs) (stable toolchain)
-- Optional: the first few chapters of [The Rust Book](https://doc.rust-lang.org/book/)
 
 > **About the code.** Blocks marked **runnable** compile as a standalone `main.rs` or as part of the exercise crate. Other blocks are **snippets** that show one idea.
 
@@ -106,6 +108,8 @@ Small, fixed-size types (`u64`, `bool`, `[u8; 32]`) are `Copy`: assigning them c
 
 **Exercise 1.3** uses `&mut Account` twice in one function.
 
+> **Later:** [01, Part A](./01-solana-foundations.md#part-a-rust-applied-to-solana-types) shows this as `AccountInfo`: the runtime owns account data and only lends it to your program.
+
 ## 3. Lifetimes
 
 A **lifetime** names how long a borrow is valid. Most of the time the compiler infers it. You must write one when a function returns a reference derived from its inputs, or when a struct stores a reference.
@@ -134,6 +138,8 @@ fn main() {
 **On Solana:** every `AccountInfo<'info>` borrows from the input buffer the runtime hands your program. The `'info` lifetime says "this account view lives as long as the instruction's input", and Anchor's `Context<'info, T>` threads it through. When you see a wall of `'info`, read it as "borrowed from the transaction input".
 
 **Exercise 1.1** asks you to write `longest`.
+
+> **Later:** the `'info` lifetime on `AccountInfo<'info>` is this idea with a name Anchor chose. It is applied as a Solana type in [01, Part A](./01-solana-foundations.md#part-a-rust-applied-to-solana-types).
 
 ## 4. Structs, enums and `match`
 
@@ -294,6 +300,8 @@ fn main() {
 
 **Exercise 3.3** moves lamports between two `RefCell`s and must handle "both are the same cell".
 
+> **Later:** this is why `AccountInfo` wraps lamports and data in `Rc<RefCell<…>>`, and why a duplicate mutable account can panic at runtime. Pattern and fix: [04 §1.9](./04-advanced-security-and-exploits.md#19-duplicate-mutable-accounts).
+
 ## 9. Integers: overflow, casts and rounding
 
 - **Overflow.** In debug builds, `u64::MAX + 1` panics. In release builds it **wraps** to 0 unless the profile sets `overflow-checks = true`. Solana and Anchor templates set it, but check every `Cargo.toml` you audit.
@@ -314,6 +322,8 @@ fn main() {
 ```
 
 **Exercise 3.2** implements share math in `u128` and proves, with a property test, that a deposit followed by a withdrawal never returns more than went in.
+
+> **Later:** token amounts are `u64`; do the multiply in `u128` and convert back with `try_from`. Findings of this shape: [04 §1.10](./04-advanced-security-and-exploits.md#110-integer-overflow-casts-and-rounding).
 
 ## 10. Serialization with Borsh
 
@@ -352,6 +362,8 @@ Two consequences matter for security:
 2. **`try_from_slice` rejects trailing bytes**, but `deserialize(&mut &data[..])` does not. Know which one the code uses.
 
 **Exercise 2.3** asks you to predict the Borsh length of an account. **Exercise 3.1** adds a discriminator.
+
+> **Later:** type cosplay exists because Borsh carries no type name. [01, Part A](./01-solana-foundations.md#part-a-rust-applied-to-solana-types) adds discriminators and zero-copy layouts; [04 §1.3](./04-advanced-security-and-exploits.md#13-account-confusion-and-type-cosplay) is the bug class.
 
 ## 11. Testing: unit, property and adversarial
 
@@ -595,6 +607,8 @@ Unit tests check the cases you thought of. Property tests and fuzzers find the o
 - [ ] Security clippy lints enabled; `cargo clippy -- -D warnings` in CI
 - [ ] Property tests for math and decoders; a fuzz target for every parser
 
+> **Later:** [04 §1.16](./04-advanced-security-and-exploits.md#116-rust-level-bugs-panics-compute-memory-and-the-supply-chain) shows how these habits become audit findings. The Rust checklist stays here; do not look for a second copy of it.
+
 ## 14. Exercises
 
 Clone the repo, then:
@@ -613,6 +627,15 @@ The same test suite ([`shared/exercises.rs`](./exercises/00-rust-fundamentals/sh
 - [ ] **1.1 `longest`** (lifetimes, §3). Return the longer of two `&str`; on a tie return the first.
 - [ ] **1.2 `total_lamports`** (iterators, overflow, §7, §9). Sum account balances; return `None` on overflow.
 - [ ] **1.3 `transfer`** (borrowing, errors, §2, §5). Move lamports between two `&mut Account`. Return `InsufficientFunds { have, need }` or `Overflow`, and leave **both** accounts unchanged on any error.
+
+<details>
+<summary>Level 1 hints</summary>
+
+- **1.1** The return type already carries the lifetime. On a tie, the first argument wins.
+- **1.2** `try_fold` plus `checked_add` is enough. `None` is the overflow signal.
+- **1.3** Compute both new balances before writing either one. `checked_sub` / `checked_add` give you the error cases.
+
+</details>
 
 <details>
 <summary>Level 1 answers</summary>
@@ -646,6 +669,15 @@ Why can't the caller pass the same account as `from` and `to`? Two `&mut` to one
 - [ ] **2.1 `decode_instruction`** (enums, `match`, §4). Decode `[tag, payload…]`: `0` = `Initialize` with no payload; `1` = `Deposit`, `2` = `Withdraw`, each with exactly 8 bytes of little-endian `u64`. Anything else is `InvalidInstruction`. A property test feeds it random bytes: it must never panic.
 - [ ] **2.2 `top_holders`** (iterators, §7). Return the owners of the `n` richest accounts, richest first, skipping zero balances; ties keep input order.
 - [ ] **2.3 `borsh_len`** (Borsh, §10). Return the serialized length of an `Account`. Predict the number before you run the test.
+
+<details>
+<summary>Level 2 hints</summary>
+
+- **2.1** Split off the tag byte first; reject the wrong payload length. The function must never panic on random bytes.
+- **2.2** Filter zeros, then a stable sort by balance descending, then `take(n)`.
+- **2.3** Predict from [§10](#10-serialization-with-borsh) before you run it: a pubkey is 32 bytes, a `u64` is 8.
+
+</details>
 
 <details>
 <summary>Level 2 answers</summary>
@@ -683,6 +715,15 @@ pub fn borsh_len(account: &Account) -> usize {
 - [ ] **3.1 `store` / `load`** (traits, generics, Borsh, §6, §10). `store` writes `T::DISCRIMINATOR` then the Borsh bytes. `load::<T>` rejects data whose first 8 bytes aren't `T::DISCRIMINATOR` (`WrongAccountType`) and data with trailing bytes. The tests try to load a `Config` as a `Vault`: both have the same Borsh shape, so only the discriminator can stop it.
 - [ ] **3.2 `deposit_shares` / `withdraw_assets`** (integers, §9). Vault share math in `u128`, rounding **down** both ways; first depositor gets 1:1; `None` on overflow, division by zero or burning more shares than exist. A property test checks that a deposit followed by a full withdrawal never returns more than was deposited.
 - [ ] **3.3 `move_lamports`** (`RefCell`, §8). Move lamports between two `&RefCell<u64>`. If both arguments are the **same cell**, return `DuplicateAccount` instead of panicking; if another borrow is held, return an error instead of panicking; never leave a partial update.
+
+<details>
+<summary>Level 3 hints</summary>
+
+- **3.1** The discriminator is the only type tag. Reject trailing bytes (`try_from_slice` does this).
+- **3.2** Work in `u128`, round down both ways, and define the first-deposit case. Return `None` rather than panic.
+- **3.3** Compare the two `RefCell`s by pointer first. Use `try_borrow_mut`. Compute both new values before writing.
+
+</details>
 
 <details>
 <summary>Level 3 answers</summary>
@@ -727,6 +768,57 @@ pub fn move_lamports(from: &RefCell<u64>, to: &RefCell<u64>, amount: u64) -> Res
 ```
 
 Note that `deposit_shares` with a first-deposit 1:1 rule is the shape behind the well-known *first-depositor inflation* attack on share vaults. Guide 04 explains it and the usual fixes (virtual shares, minimum initial deposit).
+
+</details>
+
+### Level 4: spot the red flag
+
+Each snippet is **deliberately broken** and is here so you can practise detection. Do not copy it into a program. For each one: name the bug, the input that triggers it, and the fix. No need to write an attack script.
+
+- [ ] **4.1**
+
+```rust
+// SNIPPET for detection only. Do not deploy.
+fn credit(amount: u128) -> u64 {
+    amount as u64
+}
+```
+
+- [ ] **4.2**
+
+```rust
+// SNIPPET for detection only. Do not deploy.
+fn liquidate(position: &Position, price: u64) -> u64 {
+    let feed = &position.price_feeds[0];
+    let value = position.size * price;
+    value / position.debt
+}
+```
+
+- [ ] **4.3**
+
+```rust
+// SNIPPET for detection only. Do not deploy.
+fn deposit_shares(amount: u64, total_assets: u64, total_shares: u64) -> u64 {
+    amount * total_shares / total_assets
+}
+```
+
+<details>
+<summary>Level 4 hints</summary>
+
+- **4.1** What happens to the high bits of a `u128`? See §13.3.
+- **4.2** Three failure modes, not one: an empty `price_feeds`, a multiply that overflows in release, and `debt == 0`. See §13.2, §13.1, §9.
+- **4.3** First depositor (`total_shares == 0`), overflow of the multiply, and rounding. See exercise 3.2 and §13.4.
+
+</details>
+
+<details>
+<summary>Level 4 answers</summary>
+
+- **4.1** `as u64` silently keeps the low 64 bits. An amount larger than `u64::MAX` is credited as a wrapped value. Fix: `u64::try_from(amount).map_err(...)`.
+- **4.2** (a) `price_feeds[0]` panics when the vector is empty — a user-created position can make `liquidate` a DoS for everyone. (b) `position.size * price` overflows `u64` in a release build unless `overflow-checks = true`, and should be done in `u128` anyway. (c) `debt == 0` panics on division. Fix: `first().ok_or(...)?`, `checked_mul` in `u128` plus `try_from`, and `checked_div` (or a defined policy for zero debt). This is the shape of [04 §1.16](./04-advanced-security-and-exploits.md#116-rust-level-bugs-panics-compute-memory-and-the-supply-chain).
+- **4.3** The first depositor hits division by zero; the multiply can overflow `u64`; rounding direction is implicit and not tested. Fix: the `Option`-returning `u128` version in exercise 3.2, with a defined first-deposit policy.
 
 </details>
 

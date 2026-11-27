@@ -29,21 +29,25 @@ One rule runs through all five guides: **if a check isn't written somewhere, it 
 
 ```mermaid
 flowchart LR
-    R["00 · Rust Fundamentals<br/>+ cargo exercises"] --> A["01 · Solana Foundations<br/>Rust + Solana in code"]
+    R["00 · Rust Fundamentals<br/>+ cargo exercises"] --> A["01 · Solana Foundations<br/>account model as code"]
     A --> B["02 · Anchor Deep-Dive<br/>what every macro generates"]
-    B --> C["03 · Security Deep-Dive<br/>account model → Agave runtime"]
-    C --> D["04 · Advanced Security<br/>bug classes + real exploits"]
+    B --> C["03 · Security Deep-Dive<br/>core programs, verification, runtime"]
+    C --> D["04 · Advanced Security<br/>bug classes + incidents + capstone"]
 ```
 
-| # | Guide | You'll be able to… | Suggested time |
-| --- | --- | --- | --- |
-| 00 | [**Rust Fundamentals for Solana Developers**](./00-rust-fundamentals.md) | Read and write the Rust Solana code relies on: ownership, lifetimes, traits, `Result` + `thiserror`, iterators, `Rc<RefCell<…>>`, Borsh. Then the Rust security lens: overflow, panics as DoS, truncating casts, rounding, decoder bugs, SBF limits, `unsafe`, supply chain, security clippy lints, property tests and fuzzing. Graded exercises in a real Cargo workspace | 1–2 weeks |
-| 01 | [**Solana Foundations: Rust and Solana Concepts in Code**](./01-solana-foundations.md) | See transactions, accounts and PDAs as structs; write a native vault by hand; port it to Anchor; write your first exploit test in LiteSVM | 4–6 weeks with exercises |
-| 02 | [**Anchor Framework Deep-Dive**](./02-anchor-deep-dive.md) | Read an Anchor program as the code it expands into: instruction lifecycle, every account type and constraint, CPIs, zero-copy, Token-2022, IDLs, 14 Anchor-specific bug patterns | 2–3 weeks |
-| 03 | [**Solana Security Deep-Dive: From Account Model to Agave Runtime**](./03-solana-security-deep-dive.md) | Audit for real: account-model invariants, core programs, privilege flow through CPIs, reading an AMM, a lending market and a perp DEX, and how Agave executes a transaction | 8–12 weeks |
-| 04 | [**Advanced Solana Security and Real-World Exploits**](./04-advanced-security-and-exploits.md) | Spot 16 bug classes with vulnerable code next to the fix; explain Wormhole, Cashio, Crema, Nirvana, Mango, Solend, Raydium, Slope and Loopscale in account-model terms (every figure sourced); run a full audit checklist | 2–4 weeks |
+Each idea has **one home**. Later guides link back instead of teaching it again. 00 is Rust and Rust-level security. 01 is the account model as code, a native program, a first Anchor port, tokens, and the proof-of-check test pattern. 02 is Anchor. 03 is runtime invariants, the core programs, read-only verification (explorers and the CLI), CPI privilege flow, reading live protocols, and Agave. 04 is the bug-class catalogue, sourced incidents, the full audit checklist, and a capstone due-diligence report.
 
-Already fluent in Rust? Skim 00 and do its Level 3 exercises. Already shipping Anchor programs? Start at 03, then 04.
+Every guide starts with a **Prerequisites / This file covers / This file does not cover** block and ends with previous/next links, so you can always see where you are.
+
+| # | Guide | This file covers — you'll be able to… | Suggested time |
+| --- | --- | --- | --- |
+| 00 | [**Rust Fundamentals for Solana Developers**](./00-rust-fundamentals.md) | Read and write the Rust Solana code relies on: ownership, lifetimes, traits, `Result` + `thiserror`, iterators, `Rc<RefCell<…>>`, Borsh. Then the Rust security lens: overflow, panics as DoS, truncating casts, rounding, decoder bugs, SBF limits, `unsafe`, supply chain, security clippy lints, property tests and fuzzing. Graded Cargo exercises, plus spot-the-red-flag drills | 1–2 weeks |
+| 01 | [**Solana Foundations: Rust and Solana Concepts in Code**](./01-solana-foundations.md) | See transactions, accounts and PDAs as structs (Rust itself stays in 00); write a native vault by hand; port it to Anchor; write your first proof-of-check test in LiteSVM; practise a first read-only look at official programs | 4–6 weeks with exercises |
+| 02 | [**Anchor Framework Deep-Dive**](./02-anchor-deep-dive.md) | Read an Anchor program as the code it expands into: instruction lifecycle, every account type and constraint, CPIs, zero-copy, Token-2022, IDLs, 14 Anchor-specific bug patterns | 2–3 weeks |
+| 03 | [**Solana Security Deep-Dive: From Account Model to Agave Runtime**](./03-solana-security-deep-dive.md) | Recite the runtime's account-model invariants; know what the core programs check and what they don't; verify upgrade authority, mint/freeze/fee/hook switches and LP holders with explorers and the CLI; trace privilege flow through CPIs; read an AMM, a lending market and a perp DEX; follow a transaction through Agave | 8–12 weeks |
+| 04 | [**Advanced Solana Security and Real-World Exploits**](./04-advanced-security-and-exploits.md) | Spot 16 bug classes with a short, annotated vulnerable snippet next to the fix; explain Wormhole, Cashio, Crema, Nirvana, Mango, Solend, Raydium, Slope and Loopscale in account-model terms (every figure sourced); run the full audit checklist; write a capstone due-diligence report | 2–4 weeks |
+
+Already fluent in Rust? Skim 00 and do its Level 3–4 exercises. Already shipping Anchor programs? Start at 03, then 04.
 
 ## Who it's for
 

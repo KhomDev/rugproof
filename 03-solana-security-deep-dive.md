@@ -2,26 +2,27 @@
 
 > **Rugproof** · ← [02 · Anchor Deep-Dive](./02-anchor-deep-dive.md) · [Series overview](./README.md) · [04 · Advanced Security & Exploits](./04-advanced-security-and-exploits.md) →
 
+**Prerequisites:** [01 · Solana Foundations](./01-solana-foundations.md) (Parts B–F; Part A if the Solana types still feel new) and [02 · Anchor Deep-Dive](./02-anchor-deep-dive.md). You should be able to write an Anchor `#[derive(Accounts)]` struct and explain what each constraint proves.
+
+**This file covers:** the account-model *invariants* the runtime actually enforces; the System, Token, ATA, Token-2022 and upgradeable-loader programs, including what they do **not** check; how to verify upgrade authority, mint/freeze/fee/hook switches and LP holders with explorers and read-only CLI (§3.6); privilege flow through CPIs; a method for reading an AMM, a lending market and a perp DEX; and how Agave executes a transaction. This is the home for core programs, verification, CPI privilege flow, protocol reading and the runtime.
+
+**This file does not cover:** Rust-level bugs ([00 §13](./00-rust-fundamentals.md#13-rust-security-for-on-chain-code)); teaching the account model from scratch ([01, Part B](./01-solana-foundations.md#part-b-solana-terms-as-they-look-in-code)); Anchor wrappers and constraints ([02 §§4–5](./02-anchor-deep-dive.md#4-accounts-structs)); or the full vulnerable-vs-fixed bug-class catalogue and incident write-ups ([04](./04-advanced-security-and-exploits.md)). Section 6 is a map into 04, not a second copy of it.
+
 ## Learning objectives
 
 By the end of this guide you can:
 
 - Reason about any instruction's account list from first principles: who owns each account, who must sign, who may write
 - State the invariants the System, Token, ATA, Token-2022 and upgradeable-loader programs enforce for you, and the ones they don't
+- Verify, with an explorer or the CLI, a program's upgrade authority and a mint's authorities, extensions and LP holders — without sending a transaction
 - Trace signer privileges through CPIs
 - Read an AMM, a lending market and a perp DEX with a repeatable method
-- Apply the full bug-class catalogue as a per-instruction checklist
 - Follow a transaction through the Agave runtime down to your entrypoint
-
-## Prerequisites
-
-[01 · Solana Foundations](./01-solana-foundations.md) (Parts A–F) and [02 · Anchor Deep-Dive](./02-anchor-deep-dive.md).
-
-> **About the code.** All code here is **snippets** that illustrate one check or bug. File paths in Agave and protocol repos refer to their `master`/`main` branches at the time of writing and can move.
+- Use the bug-class map in §6 to jump to the matching vulnerable/fixed pattern in [04](./04-advanced-security-and-exploits.md)
 
 ## How to use this guide
 
-**The uncomfortable truth first:** this guide is a map, not the territory. Reading it gets you vocabulary; you only become a Solana auditor by writing exploits against deliberately broken programs and by reading real protocol code until account validation is a reflex. Budget 8–12 weeks of daily work for the seven parts, and expect part 5 (reading three protocols) to take as long as parts 1–4 combined. \[Likely\]
+**The uncomfortable truth first:** this guide is a map, not the territory. Reading it gets you vocabulary; you only become a Solana auditor by writing proof-of-check tests against deliberately broken programs you own, and by reading real protocol code until account validation is a reflex. Budget 8–12 weeks of daily work, and expect part 5 (reading three protocols) to take as long as parts 1–4 combined. \[Likely\]
 
 **Why Solana is different from EVM, in one sentence:** on EVM a contract owns its storage and the danger is *what code runs*; on Solana programs are stateless and every piece of state arrives as an untrusted argument, so the danger is *which accounts you were handed*. Almost every Solana bug class is a variant of "the program trusted an account it did not verify". \[Certain\]
 
@@ -31,17 +32,22 @@ By the end of this guide you can:
 
 | Part | Goal | Time | Done when you can… |
 | --- | --- | --- | --- |
-| 1 Account model | Reason about any instruction's account list from first principles | 1 week | Explain why every account in a Raydium swap is passed, and who can write to each |
-| 2 Anchor | Know the exact check behind each attribute | 1 week | Predict, without running it, whether a given `#[derive(Accounts)]` struct is exploitable |
-| 3 Core programs | Know the invariants the token and loader programs enforce for you | 1 week | Name every check `spl_token::transfer` does and does not do |
+| 1 Account-model invariants | Recite the runtime's rules, with 01 as the code-level home | 3–4 days (plus 01 review if needed) | Explain why every account in a Raydium swap is passed, and who can write to each |
+| 2 Anchor, as an auditor | Use 02's wrappers and constraints to write "what is proven" | 2–3 days | Predict, without running it, whether a given `#[derive(Accounts)]` struct is exploitable |
+| 3 Core programs + verification | Know the invariants, and how to *look up* authorities and extensions | 1 week | Name every check `spl_token::transfer` does and does not do; fill a §3.6 sheet on a real mint |
 | 4 CPIs | Trace privilege flow across program boundaries | 3–4 days | Spot a signer-privilege escalation and an arbitrary-CPI bug on sight |
 | 5 Protocols | Read an AMM, a lending market, a perp DEX end to end | 3–5 weeks | Write a one-page threat model for each, listing every trust assumption |
-| 6 Bug classes | Turn patterns into a checklist | 1 week + ongoing | Find a seeded bug in an unfamiliar program in under an hour |
+| 6 Bug-class map | Know which 04 section holds each pattern | 1 day, then ongoing in 04 | Point at the 04 section for a seeded bug in under a minute |
 | 7 Runtime | Understand what the validator actually enforces | 1–2 weeks | Explain what happens between `sendTransaction` and your entrypoint, with file names |
 
-Read parts 1–4 in order. Part 6 can run in parallel with part 5: each time you read a protocol, try to apply every bug class to it. Part 7 matters most for the edge cases (realloc, duplicate accounts, CPI depth, compute limits) that appear in high-severity findings.
+
+> **About the code.** All code here is **snippets** that illustrate one check or bug. File paths in Agave and protocol repos refer to their `master`/`main` branches at the time of writing and can move.
+
+Read parts 1–4 in order. Part 6 is a map into [04](./04-advanced-security-and-exploits.md): each time you read a protocol in part 5, use the map, then do the full vulnerable-vs-fixed patterns in 04. Part 7 matters most for the edge cases (realloc, duplicate accounts, CPI depth, compute limits) that appear in high-severity findings.
 
 ## 1. The account model
+
+[01, Part B](./01-solana-foundations.md#part-b-solana-terms-as-they-look-in-code) is the home for these terms as they look in code, and [01, Part C](./01-solana-foundations.md#part-c-a-native-program-end-to-end) is where you already wrote the checks. This section does not teach "what an account is" again. It states the **runtime invariants** you recite when you audit, including the rules 01 did not spell out at this precision (who may change each field, lamport conservation, seed concatenation, address-lookup tables). If a term in the tables below is still fuzzy, go back to 01 Part B before continuing. \[Certain\]
 
 Everything on Solana is an account: a flat key→value store where the key is a 32-byte address and the value is a small fixed record. Programs are accounts. Token balances are accounts. Config is accounts. Programs hold no state of their own; they receive accounts as inputs and mutate them in place. \[Certain\]
 
@@ -125,56 +131,19 @@ A transaction carries: signatures, a message header, `account_keys`, a recent bl
 
 A Solana instruction is a function whose *every* argument is attacker-chosen except: the program ID being invoked, the signer flags (which are cryptographically backed), and the runtime's ownership rules. Everything else, including "this is the pool", "this is the oracle", "this is the token program", is a claim your code must verify.
 
-## 2. Anchor: what each check does, and what it does not
+## 2. Anchor, as an auditor uses it
+
+The wrappers, constraints, evaluation order and `/// CHECK:` rules are defined in [02 §§4–5](./02-anchor-deep-dive.md#4-accounts-structs) and the per-instruction checklist in [02 §12.4](./02-anchor-deep-dive.md#124-audit-checklist-for-each-anchor-instruction). Do not look for a second copy of those lists here.
 
 Anchor turns a `#[derive(Accounts)]` struct into a `try_accounts` function that runs before your handler. Every guarantee Anchor gives you comes from (a) the **account wrapper type** and (b) the **constraint attributes**. Anything not expressed in one of those two places is unchecked. The fastest way to audit an Anchor program is to read each Accounts struct and, for every field, write down what is *proven* about it. \[Certain\]
 
-**Version note.** Anchor 1.0 is the stable line (1.x is current as of late 2026), stewarded by OtterSec; Anchor v2 is a rewrite in release-candidate stage. Most production code you audit is still 0.29–0.32. Differences that matter for security are flagged below. \[Likely\] Source of truth: `lang/syn/src/codegen/accounts/constraints.rs` in the Anchor repo at the exact version in the target's `Cargo.lock`. Run `cargo expand` on any struct you are unsure about.
+**Version note.** Already in [02, Versions you will meet](./02-anchor-deep-dive.md#versions-you-will-meet): most production code you audit is still 0.29–0.32; 1.x is the stable line as of late 2026; v2 is a rewrite. Source of truth: `lang/syn/src/codegen/accounts/constraints.rs` at the exact version in the target's `Cargo.lock`. Run `cargo expand` on any struct you are unsure about.
 
-### 2.1 Account wrapper types
+### 2.1 What is proven (a recap, not a catalogue)
 
-| Type | Checks | Does NOT check |
-| --- | --- | --- |
-| `Account<'info, T>` | Owner == `T::owner()` (the program declaring `T`); first 8 bytes == `T`'s discriminator; Borsh-deserializes; re-serializes on exit if `mut` | That it is the *specific* `T` you meant (any account of type `T` passes); relationships to other accounts |
-| `AccountLoader<'info, T>` (zero-copy) | Owner + discriminator, lazily on `load()` / `load_mut()` | Same as above; plus `load_init` only checks discriminator is zero |
-| `Signer<'info>` | `is_signer` | Ownership, type, anything about the data. A signer can be any keypair, including a PDA signed via CPI |
-| `SystemAccount<'info>` | Owner == System Program | That it is unfunded, or not a signer, or not a specific wallet |
-| `Program<'info, P>` | Key == `P::id()` and executable | Nothing else needed: this is the fix for arbitrary CPI |
-| `Interface<'info, I>` | Key ∈ allowed set (e.g. Token or Token-2022) | Which of the set it is; your code must handle both |
-| `InterfaceAccount<'info, T>` | Owner ∈ allowed programs; deserializes `T` | Extensions (Token-2022) unless you check them |
-| `Sysvar<'info, S>` | Key == sysvar ID | Prefer `S::get()` syscalls; passing sysvars as accounts is legacy |
-| `UncheckedAccount` / `AccountInfo` | **Nothing.** Requires a `/// CHECK:` doc comment | Everything. Read every `/// CHECK` comment and try to falsify it |
-| `Box<Account<..>>` | Same as `Account`; heap-allocated to save stack | — |
-| `Option<Account<..>>` | Passing the program ID as the account means `None` | Callers can opt out of the account. Check logic that treats `None` as "skip a check" |
+For each field, write one sentence of the form "this account is proven to be …". The proof comes only from the wrapper (`Account`, `AccountLoader`, `Signer`, `Program`, `Interface`, `UncheckedAccount`, …) plus the constraints on that field (`mut`, `has_one`, `seeds`, `token::mint`, `address`, …). If you cannot write the sentence from 02, the field is unproven. `UncheckedAccount` / `AccountInfo` plus a `/// CHECK:` comment proves nothing until the handler or a constraint does.
 
-Key insight: `Account<T>` proves *"some account of type T owned by this program"*. It does not prove *"the pool this user's position belongs to"*. That relationship needs `has_one`, `seeds`, `address` or `constraint`. Missing relationship constraints are the single most common Anchor finding. \[Likely\]
-
-### 2.2 Constraints, one by one
-
-| Constraint | What it checks | What it does NOT check / gotchas |
-| --- | --- | --- |
-| `mut` | `is_writable`; marks for serialize-on-exit | Ownership (comes from the type). Without `mut`, changes to an `Account<T>` are silently dropped |
-| `dup` (1.x) | Opts in to the same account appearing in two `mut` slots | In 1.x duplicates of serializing `mut` accounts are rejected by default. **In 0.x there is no such check**: two `mut` fields can alias and the later `exit()` overwrites the earlier one |
-| `signer` | `is_signer` | Same as `Signer` type |
-| `has_one = x` | `self.x == accounts.x.key()` (field name must match) | Only equality of keys. If `x` is itself unchecked, you proved nothing. Classic: `has_one = authority` where `authority` is not a `Signer` |
-| `address = expr` | `key == expr` | Correct choice for known singletons (oracles, programs) |
-| `owner = expr` | `owner == expr` | Cannot override typed owner checks. On `UncheckedAccount` it is the only check you get |
-| `executable` | Account is a program | Which program |
-| `seeds = [..], bump` | Recomputes PDA from `program_id` + seeds and compares key. `bump` alone: `find_program_address` (canonical, costs CU); `bump = x`: uses `create_program_address` with stored bump | That the PDA is initialized, unless the type is `Account`. With `bump = stored_bump`, canonicality depends on how it was stored at init |
-| `seeds::program = p` | Derives with another program's ID | That `p` is the right program, if `p` is user-supplied |
-| `init` | CPI to System `create_account` with `payer`, `space`, owner = this program; writes discriminator. Also verifies seeds if given | Fails if the account already has lamports (prior to fix, attacker could pre-fund an address so `create_account` fails = DoS; Anchor now uses transfer+allocate+assign path when pre-funded) \[Likely\] |
-| `init_if_needed` | Like `init` if account is uninitialized; otherwise validates as the declared type and runs other constraints | **Reinitialization risk:** your handler runs on an *existing* account too. Any handler logic that "sets initial state" will reset it. Feature-gated precisely because it is dangerous |
-| `zero` | Discriminator is all zeros; then writes discriminator | That the account is rent-exempt or of correct size (check `space`); used for >10 KiB accounts created client-side |
-| `close = target` | On exit: move all lamports to `target`, zero data, assign to System Program (since 0.30 / 1.x behaviour; older versions wrote `CLOSED_ACCOUNT_DISCRIMINATOR`) | That `target` is the right recipient (add `has_one`). Revival within the same tx is mitigated by reassigning owner, but check custom manual closes |
-| `realloc = n, realloc::payer, realloc::zero` | Resizes, pays or refunds rent difference | `realloc::zero = false` leaves stale bytes when growing after a shrink in the same tx. Shrinking refunds **all** lamports above the new minimum, including intentional vault balances |
-| `constraint = expr` | Arbitrary boolean | Only what you wrote. Read the expression carefully: `>=` vs `>`, wrong field |
-| `token::mint`, `token::authority`, `token::token_program` | Deserialized token account's `mint` and `owner` fields match | Delegate, close authority, frozen state, Token-2022 extensions |
-| `mint::authority`, `mint::decimals`, `mint::freeze_authority` | Mint fields match | Supply, extensions (transfer fee, hooks, permanent delegate) |
-| `associated_token::mint/authority` | Key == ATA derived for (authority, mint, token\_program) | Nothing more; an ATA's address is also its validation |
-| `extensions::*` (Token-2022) | Sets or validates the named mint extension | Every extension it does not name |
-| `discriminator = ..` | Custom discriminator (1.x) | All-zero discriminators rejected in 1.x; in 0.x a zeroed discriminator could be hijacked via IDL instructions |
-
-### 2.3 What Anchor never checks for you
+### 2.2 What Anchor never checks for you
 
 1. **Relationships** between accounts (that this vault belongs to this pool). You must add `has_one` / `seeds` / `constraint`.
 2. **`remaining_accounts`**. Raw `AccountInfo`s with zero validation (part 6).
@@ -185,7 +154,7 @@ Key insight: `Account<T>` proves *"some account of type T owned by this program"
 7. **`/// CHECK:` comments are documentation, not code.** The compiler only checks the comment exists.
 8. **Constraint evaluation order.** Constraints run in field order, so a `constraint` that reads a field validated later in the struct sees unvalidated data. \[Likely\]
 
-### 2.4 Exercise
+### 2.3 Exercise
 
 Take the struct below and write, for each field, what is proven. Then find the bug.
 
@@ -253,6 +222,7 @@ The ATA is a PDA of the ATA program with seeds `[wallet, token_program_id, mint]
 - But **users can own non-ATA token accounts** and **an ATA's owner can be changed** via `SetAuthority(AccountOwner)` on legacy Token (blocked by the ATA program's "immutable owner" extension only on Token-2022). Never infer the current owner from the ATA address on legacy Token; read the `owner` field. \[Likely\]
 - `token_program_id` is part of the seeds, so the Token and Token-2022 ATAs for the same (wallet, mint) are different addresses.
 
+<a id="34-token-2022-extensions"></a>
 ### 3.4 Token-2022 / Token Extensions (`TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb`)
 
 A superset of Token with a TLV extension area after the base 165/82 bytes (padded so a token account's `AccountType` byte sits at offset 165). Protocols that accept "any SPL token" via `Interface<TokenInterface>` inherit every extension's semantics. This is where many 2024–2026 findings live. \[Likely\]
@@ -293,6 +263,67 @@ Security points:
 - **Closing a program** is permanent for that address; its program ID can never be redeployed.
 
 Source: Agave `programs/bpf_loader/src/lib.rs` (the processor for all BPF loaders, including execution entry; see part 7) and `programs/loader-v4/src/lib.rs`.
+
+<a id="36-read-only-verification-explorers-and-the-cli"></a>
+### 3.6 Read-only verification: explorers and the CLI
+
+Parts 3.1–3.5 are what the programs enforce. This section is how you *look* at a live program, mint or token account without sending a transaction. Everything below is read-only: explorers, `solana program show`, and `spl-token display`. Do not use `authorize`, `create-token`, `upgrade` or any other command that submits a transaction while you are investigating. \[Certain\]
+
+Use official or well-known public tools:
+
+| Tool | What you open | Docs |
+| --- | --- | --- |
+| [Solana Explorer](https://explorer.solana.com) | `/address/<PUBKEY>` for a program, mint, token account or wallet | The official explorer; Token-2022 extensions render on the account page |
+| [Solscan](https://solscan.io) | `/account/<PUBKEY>` or `/token/<MINT>` | A commonly used third-party explorer; confirm what you see against Explorer or the CLI |
+| Solana CLI | `solana program show <PROGRAM_ID>` | [Deploying programs](https://solana.com/docs/programs/deploying) |
+| SPL Token CLI | `spl-token display <MINT_OR_ACCOUNT>` (add `--program-2022` when the mint is Token-2022) | [SPL Token CLI reference](https://solana.com/docs/references/spl-token-cli) |
+
+`solana program show` prints, among other fields, `ProgramData Address`, `Authority` (the upgrade authority, or absent/`None` when the program is immutable), `Last Deployed In Slot`, and `Data Length`. \[Certain\] If the account is a native builtin rather than an upgradeable-loader program, the CLI may not show an `Authority` field; record that, and do not invent a value.
+
+`spl-token display` prints the mint or token-account layout: supply, decimals, `mint_authority`, `freeze_authority`, account `owner`, `state` (including frozen), delegates, and Token-2022 extensions when present. \[Certain\] Official extension behaviour is in the [Token-2022 extensions guide](https://solana.com/docs/tokens/extensions).
+
+#### What to record for a program
+
+1. **Program ID** you were given, and whether Explorer shows it as executable.
+2. **Owner / loader.** New programs are usually owned by the upgradeable BPF loader (`BPFLoaderUpgradeab1e11111111111111111111111`, §3.5). Legacy loaders are not upgradeable.
+3. **Upgrade authority.** A pubkey here is a trust assumption: that key can replace the bytecode and, with it, take any vault the program owns ([04 §1.15](./04-advanced-security-and-exploits.md#115-upgrade-authority-and-admin-key-risk); Raydium, [04 §2.8](./04-advanced-security-and-exploits.md#28-raydium-december-2022-a-compromised-admin-key)). `None`, or an Explorer label that the program is immutable, is a stronger (but still not sufficient) sign.
+4. **Who holds that authority, if it is a pubkey.** A single wallet is a single point of failure. A documented multisig (for example a Squads account) is better; you still record the threshold and the signers when they are public. The explorer will not always spell this out: follow the authority address and read what is there.
+5. **Verified build**, if any. Solana's [verifiable builds](https://solana.com/docs/programs/verified-builds) flow is how you check that the on-chain bytecode matches published source. An unverified upgradeable program is a program whose code you have not actually seen.
+
+#### What to record for a mint
+
+Walk this list on every mint a protocol will hold, reward, or price against. Layouts are in §3.2 and §3.4; Part E of [01](./01-solana-foundations.md#part-e-tokens-in-code) is the byte-level introduction.
+
+1. **Which token program owns it** — Token (`TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`) or Token-2022 (`TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb`). The same symbol on two programs is two different mints.
+2. **Mint authority.** Present: someone can increase supply. `None`: supply cannot be minted by that authority any longer (a later close-and-recreate of a Token-2022 mint is a separate issue, §3.4).
+3. **Freeze authority.** Present: someone can freeze any token account of this mint, including a protocol vault, which blocks transfers, liquidations and withdrawals.
+4. **Token-2022 extensions**, one by one. At least record:
+
+   | Extension or switch | Why a defender cares |
+   | --- | --- |
+   | Transfer fee | Recipients receive less than `amount`; vaults that credit `amount` go insolvent |
+   | Transfer hook | Every transfer CPIs into another program you must also read and pin |
+   | Permanent delegate | That key can transfer or burn from *any* account of the mint, including vaults |
+   | Default account state = Frozen | New accounts start frozen; a vault may be unusable unless thawed |
+   | Mint close authority | A zero-supply mint can be closed and recreated at the same address with new parameters |
+   | Pausable | Transfers can be halted for everyone |
+   | Confidential transfers, non-transferable, memo / CPI guard | Accounting, liquidations or protocol CPIs can be wrong or can revert |
+
+   There is no on-chain field named "blacklist". The same power shows up as a freeze authority, a frozen default state, a transfer hook, a permanent delegate, or a pause. Record the mechanism you actually see. \[Certain\]
+
+5. **Fee and parameter switches inside the *protocol* program**, not the mint: admin instructions that change fee bps, oracle sources, pause flags, or withdrawal destinations. Those live in the program's instruction list (guide 02's IDL; part 5 of this guide). A mint with no freeze authority can still sit behind a protocol that can pause or redirect funds.
+
+#### What to record for liquidity
+
+"LP is locked" is a claim. Verify the holders of the **LP token mint** (or the pool's equivalent receipt token), which you get from the pool state (part 5: Raydium CP-Swap records the LP mint on `PoolState`).
+
+1. Open the LP mint on Explorer or Solscan and list the largest token-account holders.
+2. For each large holder, identify what the account is: a known pool/lock program, a wallet, a PDA of the AMM, or the [Sysvar / system incinerator](https://explorer.solana.com/address/1nc1nerator11111111111111111111111111111111) (`1nc1nerator11111111111111111111111111111111`). The incinerator is a documented System-program address; tokens sent there are not recoverable. Do not treat an ordinary wallet as a lock just because a website says so.
+3. If a lock or vesting program holds the tokens, read *that* program too: is it upgradeable, who is its authority, and does it expose an unlock time you can see on-chain? A lock that the team can cancel is not a lock.
+4. A burned *minimum liquidity* share that some AMMs mint into a permanent lock (look for this in `initialize` — part 5.1 flags it in Raydium CP-Swap) is not the same as "the team cannot withdraw the rest of the LP." Record both.
+5. If there is no LP token because the market is a different design (lending reserves, a perp, an order book), say so and inspect who can withdraw the reserves instead of forcing an LP-lock story onto it.
+
+Write the answers down before you read a single handler. The leftover trust assumptions become the first page of a due-diligence report ([04, capstone](./04-advanced-security-and-exploits.md#part-4-exercises)).
 
 ## 4. CPIs and how privileges flow
 
@@ -456,27 +487,33 @@ What to trace:
 
 One page: account diagram, the invariant list, the top 5 places you'd look for bugs, and every trust assumption. If you can't write it, you haven't finished reading.
 
-## 6. The bug classes
+## 6. The bug-class map
 
-Every class below reduces to the part-1 rule: *an account or input was trusted without proof*. For each, the table gives the check that's missing and the fix. Then work through the [sealevel-attacks](https://github.com/coral-xyz/sealevel-attacks) repo: each of its 11 folders has `insecure`, `secure` and `recommended` versions. Write an exploit test for every `insecure` one before reading the fix. \[Certain\]
+Every class below reduces to the part-1 rule: *an account or input was trusted without proof*. This section is a **map**, not a second textbook. The missing check, the Anchor fix, and the real-world shape are in the table so you can navigate; the vulnerable snippet next to the fix, and the sourced incidents, are in [04, Part 1 and Part 2](./04-advanced-security-and-exploits.md).
 
-### 6.1 The sealevel-attacks set
+For the canonical insecure/secure examples, work through [sealevel-attacks](https://github.com/coral-xyz/sealevel-attacks): each of its 11 folders has `insecure`, `secure` and `recommended` versions. For each `insecure` program, write down the missing sentence and a test that the insecure version accepts a crafted account list and the `secure` version rejects it (the proof-of-check pattern from [01, Part F](./01-solana-foundations.md#part-f-testing-and-your-first-exploit-test)). Only test programs you own or copies in this repo / sealevel-attacks. \[Certain\]
 
-| # | Class | Missing check | Fix (Anchor) | Real-world shape |
-| --- | --- | --- | --- | --- |
-| 0 | Signer authorization | Authority never required to sign | `Signer` + `has_one = authority` | Admin instruction callable by anyone |
-| 1 | Account data matching | Account's fields not tied to others (token account's owner/mint) | `has_one`, `token::authority`, `constraint` | Withdraw to an account whose `owner` isn't the user |
-| 2 | Owner checks | `AccountInfo.owner` not verified; attacker forges data | `Account<T>` | Fake config/oracle account with attacker-chosen bytes |
-| 3 | Type cosplay | Two account types same layout; no discriminator check | Anchor discriminators | Pass a `User` where a `Admin` is expected |
-| 4 | Initialization | Re-init an existing account, overwriting authority | `init` (not `init_if_needed`), `is_initialized` flags | Attacker re-initializes a vault and becomes its authority |
-| 5 | Arbitrary CPI | Callee program ID not checked | `Program<'info, Token>` | Fake token program "transfers" nothing |
-| 6 | Duplicate mutable accounts | Same account passed twice for two roles | Key inequality constraint; 1.x default rejection | `from == to` double-counts rewards |
-| 7 | Bump seed canonicalization | Non-canonical bump accepted from user | `bump` (canonical) or stored canonical bump | Two "unique" PDAs for one logical key |
-| 8 | PDA sharing | One PDA authority across many users/pools | Seeds include the resource owner | User A's instruction signs for pool B's vault |
-| 9 | Closing accounts | Lamports drained but data/owner left; revived in same tx | `close = target` | Reclaim rent, re-fund in the same tx, reuse a "closed" voucher |
-| 10 | Sysvar address checking | Sysvar account passed but not key-checked | `Sysvar<'info, T>`, `address = sysvar::instructions::ID` | Fake Instructions sysvar: the Wormhole exploit (Feb 2022, \~120k ETH) |
+### 6.1 The sealevel-attacks set, with a pointer into 04
+
+| # | Class | Missing check | Fix (Anchor) | Full pattern in 04 | Real-world shape |
+| --- | --- | --- | --- | --- | --- |
+| 0 | Signer authorization | Authority never required to sign | `Signer` + `has_one = authority` | [§1.1](./04-advanced-security-and-exploits.md#11-missing-signer-check) | Admin instruction callable by anyone |
+| 1 | Account data matching | Account's fields not tied to others (token account's owner/mint) | `has_one`, `token::authority`, `constraint` | [§1.4](./04-advanced-security-and-exploits.md#14-missing-relationship-checks-the-validation-chain) | Withdraw to an account whose `owner` isn't the user |
+| 2 | Owner checks | `AccountInfo.owner` not verified; attacker forges data | `Account<T>` | [§1.2](./04-advanced-security-and-exploits.md#12-missing-owner-check) | Fake config/oracle account with attacker-chosen bytes |
+| 3 | Type cosplay | Two account types same layout; no discriminator check | Anchor discriminators | [§1.3](./04-advanced-security-and-exploits.md#13-account-confusion-and-type-cosplay) | Pass a `User` where a `Admin` is expected |
+| 4 | Initialization | Re-init an existing account, overwriting authority | `init` (not `init_if_needed`), `is_initialized` flags | [§1.7](./04-advanced-security-and-exploits.md#17-reinitialization) | Attacker re-initializes a vault and becomes its authority |
+| 5 | Arbitrary CPI | Callee program ID not checked | `Program<'info, Token>` | [§1.6](./04-advanced-security-and-exploits.md#16-arbitrary-cpi) | Fake token program "transfers" nothing |
+| 6 | Duplicate mutable accounts | Same account passed twice for two roles | Key inequality constraint; 1.x default rejection | [§1.9](./04-advanced-security-and-exploits.md#19-duplicate-mutable-accounts) | `from == to` double-counts rewards |
+| 7 | Bump seed canonicalization | Non-canonical bump accepted from user | `bump` (canonical) or stored canonical bump | [§1.5](./04-advanced-security-and-exploits.md#15-pda-seed-collisions-and-bump-canonicalization) | Two "unique" PDAs for one logical key |
+| 8 | PDA sharing | One PDA authority across many users/pools | Seeds include the resource owner | [§1.5](./04-advanced-security-and-exploits.md#15-pda-seed-collisions-and-bump-canonicalization) | User A's instruction signs for pool B's vault |
+| 9 | Closing accounts | Lamports drained but data/owner left; revived in same tx | `close = target` | [§1.8](./04-advanced-security-and-exploits.md#18-closing-accounts-and-revival) | Reclaim rent, re-fund in the same tx, reuse a "closed" voucher |
+| 10 | Sysvar address checking | Sysvar account passed but not key-checked | `Sysvar<'info, T>`, `address = sysvar::instructions::ID` | [§1.12](./04-advanced-security-and-exploits.md#112-sysvar-spoofing-and-instruction-introspection) | Fake Instructions sysvar: the Wormhole exploit (Feb 2022; figures in [04 §2.1](./04-advanced-security-and-exploits.md#21-wormhole-february-2022-a-fake-instructions-sysvar)) |
+
+The subsections below keep the material that 04 does not treat at this depth: the account *lifecycle* as a sequence of transitions, `remaining_accounts`, and signature-verification pitfalls. For overflow, oracles, Token-2022 and upgrade authority, skip straight to 04 §§1.10–1.15 and to [§3.6](#36-read-only-verification-explorers-and-the-cli) for the lookup steps.
 
 ### 6.2 Account lifecycle bugs
+
+The *transitions* are the point of this subsection. The vulnerable snippet next to the fix for reinitialization, close/revival and lamport drains is [04 §§1.7, 1.8, 1.11](./04-advanced-security-and-exploits.md#17-reinitialization).
 
 The lifecycle is: *address chosen → funded → allocated → assigned → initialized → used → (realloc) → closed → garbage-collected at tx end*. Bugs live in every transition. \[Certain\]
 
@@ -621,35 +658,53 @@ A CPI from your program re-enters at step 3 with the privilege check in front of
 
 ### 8.1 Per-instruction audit checklist
 
-Run this on every instruction of every program you audit. Every "no" is a lead.
+Use this while you read a protocol in part 5. For the full bug-class checklist (accounts, lifecycle, math, oracles, Token-2022, admin, upgrade authority, Rust/build), use [04, Part 3](./04-advanced-security-and-exploits.md#part-3-audit-checklist) — it is not copied here.
 
-- [ ] Every account: owner verified (type or explicit)?
-- [ ] Every account: discriminator/type verified?
-- [ ] Every account: tied to the others by `has_one` / seeds / address / key comparison?
-- [ ] Every authority: is a `Signer` *and* is the right signer for this resource?
-- [ ] Every PDA: seeds scoped to the resource, fixed-prefix, canonical bump?
-- [ ] Every program account used for CPI: ID pinned?
-- [ ] Every `invoke_signed`: callee trusted, PDA signs only for what this instruction should move?
-- [ ] Any two `mut` accounts that could be the same account?
-- [ ] Any account read after a CPI without `reload()`?
-- [ ] `remaining_accounts`: owner, identity, completeness, duplicates, alignment?
-- [ ] Init: can it run twice? Can someone front-run it? Can it be pre-funded into failure?
-- [ ] Close: correct recipient, data zeroed, no outstanding obligations, no revival?
-- [ ] Realloc: payer, zeroing, refund of vault lamports?
-- [ ] Token-2022: which extensions accepted, and is each handled?
-- [ ] Math: overflow checks on, casts safe, rounding against the user?
-- [ ] Oracles: account pinned, staleness and confidence checked?
-- [ ] Instruction introspection: sysvar address, program ID, offsets, CPI context, uniqueness?
-- [ ] Admin/upgrade authority: who holds it, what can it do instantly?
+**Before the handlers (the §3.6 sheet)**
+
+- [ ] Program: executable, loader, upgrade authority (pubkey / multisig / `None`), verified build?
+- [ ] Each mint the protocol holds or prices: token program, mint authority, freeze authority, Token-2022 extensions (fee, hook, permanent delegate, pause, default-frozen, close authority)?
+- [ ] LP or reserve withdrawal: who holds the LP (or who can withdraw reserves)? Is a "lock" actually a lock program you have read, a burn/incinerator, or a team wallet?
+- [ ] Admin surface: fee switches, pause, oracle changes, treasury changes — bounded? who signs?
+
+Then, for each instruction, the questions from parts 1–4: who owns each account, who must sign, who may write, what proves identity, what a CPI forwards, and whether any post-CPI value is stale. Write a test before you write a finding.
 
 ### 8.2 Exercises, in order
 
-1. **sealevel-attacks**: an exploit test for each of the 11 insecure programs. [coral-xyz/sealevel-attacks](https://github.com/coral-xyz/sealevel-attacks)
-2. **Write a vulnerable vault in native Rust (no Anchor)**, then port it to Anchor and to Pinocchio. Writing raw account parsing once is the fastest way to internalize part 1.
-3. **CTFs**: OtterSec's and Neodyme's Solana CTF challenges (search their GitHub orgs), plus the Solana "security workshop" repos. \[Likely names may have moved; search before relying on them\]
-4. **Reproduce real exploits**: Wormhole (sysvar spoofing, Feb 2022), Cashio (missing validation chain on collateral, Mar 2022), Crema (fake tick account / owner check, Jul 2022), Mango Markets (oracle manipulation, Oct 2022). Write a one-paragraph root cause for each in part-1 vocabulary, then compare with the sourced write-ups in [guide 04](./04-advanced-security-and-exploits.md).
-5. **Audit reports**: read 10 public reports on the three protocols in part 5 (OtterSec, Neodyme, Zellic, Sec3, Offside, Certora publish many). For each finding, map it to a part-6 class.
-6. **Fuzzing**: Trident (Ackee) for Anchor programs, and Crucible, which ships built into Anchor v2. Fuzz one invariant from each protocol in part 5. \[Likely\]
+1. **Quiz: what Token `Transfer` does not check.** Without looking, list five things `spl_token::transfer` will not prove for you (start from §3.2). Then open the hint.
+
+2. **Read-only investigation, two official programs and one mint you choose.** Repeat [01, exercise 1.3](./01-solana-foundations.md#level-1-the-account-model-and-spotting-a-missing-check-parts-a-b) for the System and Token programs if you have not already. Then pick **one real mint you are willing to name** (for example a mint a protocol in part 5 actually uses — take the address from that project's public docs or source, not from memory, and do not invent one). Fill the §3.6 mint sheet from Explorer or `spl-token display`. Record the token program, authorities, extensions, and any LP mint you can find. This is observation only.
+
+3. **Checklist audit of a described pool (hypothetical).** No addresses are given; do not invent any. "Harbor AMM (hypothetical) uses an upgradeable program whose upgrade authority is a single wallet. The pool's quote mint is Token-2022 with a transfer fee and a permanent delegate. The project's site says LP is locked; the largest LP token-account holder is a wallet the site labels 'team treasury'. Admin `set_fee` has no on-chain cap." Write a one-page audit note: what is already a trust assumption, what you would still verify on-chain, and which later 04 classes / incidents this resembles. Use only incidents that are already sourced in 04.
+
+4. **sealevel-attacks, as detection.** For each of the 11 insecure programs in [coral-xyz/sealevel-attacks](https://github.com/coral-xyz/sealevel-attacks), name the missing sentence and write a test that the insecure version accepts a crafted account list and the `secure` version rejects it. Only against that repo's programs (or a copy you own).
+
+5. **Write a vulnerable vault in native Rust (no Anchor), then port it to Anchor and to Pinocchio.** Writing raw account parsing once is the fastest way to internalize part 1. Keep the vulnerable version off any network.
+
+6. **Incident paragraphs, not reproductions.** Wormhole (sysvar spoofing, Feb 2022), Cashio (missing validation chain on collateral, Mar 2022), Crema (fake tick account / owner check, Jul 2022), Mango Markets (oracle manipulation, Oct 2022). Write a one-paragraph root cause for each in part-1 vocabulary, then compare with the sourced write-ups in [guide 04](./04-advanced-security-and-exploits.md). Do not build a working steal against any live or historical program.
+
+7. **Audit reports.** Read 10 public reports on the three protocols in part 5 (OtterSec, Neodyme, Zellic, Sec3, Offside, Certora publish many). For each finding, map it to a 04 class (use the §6 table).
+
+8. **Fuzzing.** Trident (Ackee) for Anchor programs, and Crucible, which ships built into Anchor v2. Fuzz one invariant from each protocol in part 5. \[Likely\]
+
+<details>
+<summary>Hints</summary>
+
+- **1.** Destination identity, `source != destination` accounting, decimals (`Transfer` vs `TransferChecked`), token-account `owner` vs `AccountInfo.owner`, frozen state is checked but your vault being the *intended* account is not.
+- **2.** `spl-token display --program-2022 <MINT>` if Explorer shows the Token-2022 program as owner. If you cannot find a public address in the protocol's docs or source, skip the mint and say so rather than guessing.
+- **3.** Raydium 2022 is the admin-key incident; Token-2022 transfer fees and permanent delegate are §3.4 / 04 §1.14; "site says locked" is exactly the claim §3.6 tells you to verify against holders.
+- **4.** The §6.1 table is the answer key for the missing sentences. The tests follow [01, Part F](./01-solana-foundations.md#part-f-testing-and-your-first-exploit-test).
+
+</details>
+
+<details>
+<summary>Answers (quiz and hypothetical checklist)</summary>
+
+**1.** A complete answer includes at least: (a) the destination is the protocol's intended account, not "some token account of the right mint"; (b) self-transfers succeed and must not break your accounting; (c) `Transfer` does not check decimals — `TransferChecked` does, and is required for many Token-2022 extensions; (d) `AccountInfo.owner` is the Token program, which does not prove the token-account `owner` field is your user; (e) it does not prove the mint is the one you intended if you never passed/checked the mint; plus freeze is checked by Token, but a frozen *vault* is a liveness failure your protocol must still reason about. Close / delegate / extensions are fair extras.
+
+**3.** Trust assumptions already visible in the prompt: single-wallet upgrade authority (can replace the program; compare [04 §1.15](./04-advanced-security-and-exploits.md#115-upgrade-authority-and-admin-key-risk) and Raydium [04 §2.8](./04-advanced-security-and-exploits.md#28-raydium-december-2022-a-compromised-admin-key)); uncapped `set_fee`; a permanent delegate that can empty vaults; transfer fees that break naive `amount` accounting; LP in a team wallet, not a verified lock. Still to verify on-chain (once you had real addresses): loader and authority, every extension, the actual LP holders, admin instruction surface, and whether a verified build exists. Do not invent addresses or loss figures.
+
+</details>
 
 ### 8.3 Reading list
 
@@ -664,10 +719,15 @@ Run this on every instruction of every program you audit. Every "no" is a lead.
 | [Solana Improvement Documents](https://github.com/solana-foundation/solana-improvement-documents) | Every runtime change (search SIMD numbers cited in this guide: 0266, 0268, 0433, 0449) |
 | [p-token upgrade page](https://solana.com/upgrades/p-token) | What changed in the Token program in 2026 |
 | [sealevel-attacks](https://github.com/coral-xyz/sealevel-attacks) | Canonical bug-class examples |
+| [Solana Explorer](https://explorer.solana.com) | Official explorer: programs, mints, Token-2022 extensions |
+| [Deploying programs](https://solana.com/docs/programs/deploying) (`solana program show`) | Upgrade authority, ProgramData, immutability |
+| [SPL Token CLI](https://solana.com/docs/references/spl-token-cli) (`spl-token display`) | Mint/freeze authorities and extensions, read-only |
+| [Token-2022 extensions](https://solana.com/docs/tokens/extensions) | Official semantics for fee, hook, permanent delegate, pause, … |
+| [Verifiable builds](https://solana.com/docs/programs/verified-builds) | Matching on-chain bytecode to published source |
 
 ### Sources
 
-Checked while writing (2026-11-26): Agave `svm/src/transaction_processor.rs`, `program-runtime/src/invoke_context.rs`, `cpi.rs`, `vm.rs`, `serialization.rs`, `programs/bpf_loader/src/lib.rs` on `master`; repo listings for raydium-cp-swap, klend and protocol-v2; the Anchor constraints reference; the Solana p-token upgrade page. Everything else is from general knowledge and tagged accordingly.
+Checked while writing (2026-11-26, verification links added 2026-11-27): Solana docs for [deploying programs](https://solana.com/docs/programs/deploying), the [SPL Token CLI](https://solana.com/docs/references/spl-token-cli), [Token-2022 extensions](https://solana.com/docs/tokens/extensions) and [verifiable builds](https://solana.com/docs/programs/verified-builds); also Agave `svm/src/transaction_processor.rs`, `program-runtime/src/invoke_context.rs`, `cpi.rs`, `vm.rs`, `serialization.rs`, `programs/bpf_loader/src/lib.rs` on `master`; repo listings for raydium-cp-swap, klend and protocol-v2; the Anchor constraints reference; the Solana p-token upgrade page. Everything else is from general knowledge and tagged accordingly.
 
 ---
 
