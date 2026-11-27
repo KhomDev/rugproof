@@ -1,0 +1,14 @@
+[workspace]
+members = ["starter", "solutions"]
+resolver = "2"
+
+[workspace.dependencies]
+borsh = { version = "1", features = ["derive"] }
+thiserror = "2"
+proptest = "1"
+
+[profile.dev]
+overflow-checks = true
+
+[profile.release]
+overflow-checks = true

@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exercises:
+    name: Exercises (cargo)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: exercises/00-rust-fundamentals
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: exercises/00-rust-fundamentals
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy (solutions)
+        run: cargo clippy -p solutions --all-targets -- -D warnings
+      - name: Test reference solutions (unit, property, adversarial)
+        run: cargo test -p solutions
+      - name: Starter compiles (tests are expected to fail until solved)
+        run: cargo test -p starter --no-run
+
+  links:
+    name: Markdown links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress
+            --max-retries 3
+            --accept 200,206,403,429,503,999
+            --timeout 30
+            --exclude 'blog\.solend\.fi'
+            --exclude 'medium\.com'
+            --exclude-path exercises
+            './**/*.md'
+          fail: true

@@ -1,0 +1,17 @@
+target/
+**/target/
+Cargo.lock.bak
+.anchor/
+test-ledger/
+node_modules/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+.env
+*.keypair.json
+id.json
+
+# proptest failure seeds from local starter runs
+*.proptest-regressions
