@@ -2,28 +2,27 @@
 
 > **Rugproof** · ← [00 · Rust Fundamentals](./00-rust-fundamentals.md) · [Series overview](./README.md) · [02 · Anchor Deep-Dive](./02-anchor-deep-dive.md) →
 
+**Prerequisites:** [00 · Rust Fundamentals](./00-rust-fundamentals.md), or equivalent (roughly the first half of [The Rust Book](https://doc.rust-lang.org/book/) plus 00 §13). A terminal, and an evening to install the toolchain (see *Setup* below).
+
+**This file covers:** Solana terms as they look in code (accounts, owner, signer, PDAs, rent, CPIs, sysvars, discriminators); a native vault written by hand; the same vault ported to Anchor; SPL / Token-2022 account layouts and a token vault; and the LiteSVM test pattern that proves a check matters. This is the home for the account model as code.
+
+**This file does not cover:** Rust language basics or the Rust security checklist (those stay in [00](./00-rust-fundamentals.md)); Anchor macros, constraints and Anchor-specific bug patterns (those start in [02](./02-anchor-deep-dive.md)); the Agave runtime, explorer verification, and reading live protocols (those are [03](./03-solana-security-deep-dive.md)); or the full bug-class catalogue and incident write-ups ([04](./04-advanced-security-and-exploits.md)).
+
 ## Learning objectives
 
 By the end of this guide you can:
 
-- Read the Rust idioms Solana code relies on (`'info` lifetimes, `Rc<RefCell<…>>`, traits, macros, byte layouts) without stopping
+- Read the Solana types that 00 prepared you for (`AccountInfo<'info>`, `Rc<RefCell<…>>`, `ProgramResult`, Borsh accounts, discriminators) without stopping
 - Map every core Solana term (account, owner, signer, PDA, rent, CPI, sysvar) to the struct or call where it lives
 - Write a small native program by hand and explain which attack each of its checks stops
 - Port that program to Anchor and say what the macros generate
-- Write your first exploit test (a proof of concept) in LiteSVM
-
-## Prerequisites
-
-- [00 · Rust Fundamentals](./00-rust-fundamentals.md), or equivalent: roughly the first half of [The Rust Book](https://doc.rust-lang.org/book/)
-- A terminal, and an evening to install the toolchain (see *Setup* below)
-
-> **About the code.** Blocks introduced as a *full program* or *Cargo.toml* are meant to build as written. Every other block is a **snippet**: it shows one idea and omits imports or surrounding code. Solana crates release often, so if an import path has moved in your version, check the crate docs on [docs.rs](https://docs.rs) (and please send a PR).
+- Write your first proof-of-check test in LiteSVM (a test that the attack fails against the secure program, and succeeds if you remove the check)
 
 ## How to use this guide
 
-**The uncomfortable truth first:** Solana security material usually feels hard because it assumes two things most newcomers don't have yet: Rust past the basics (lifetimes, `RefCell`, traits, macros, byte layouts) and the habit of seeing Solana concepts as concrete structs and function calls. This guide builds both. It is not optional reading; skipping it means memorizing bug classes you can't recognize in real code. \[Likely\]
+**The uncomfortable truth first:** Solana security material usually feels hard because it assumes two things most newcomers don't have yet: Rust past the basics, and the habit of seeing Solana concepts as concrete structs and function calls. Guide 00 built the first. This guide builds the second. It is not optional reading; skipping it means memorizing bug classes you can't recognize in real code. \[Likely\]
 
-**Who this is for:** someone about a month into the Rust Book, or who has finished [guide 00](./00-rust-fundamentals.md). Every Rust idea here is shown through the Solana code where you will actually meet it, so you learn the language and the platform together.
+**Who this is for:** someone who has finished [guide 00](./00-rust-fundamentals.md), or is about a month into the Rust Book and willing to keep 00 open for reference. Part A does not re-teach Rust. It only shows where those ideas live in Solana types.
 
 **The path**
 
@@ -32,7 +31,7 @@ By the end of this guide you can:
 | 1. Read this guide | Parts A–F, in order. Type every code block yourself; don't copy-paste | 2–3 weeks | You can explain every line of the native program in Part C without looking |
 | 2. Exercises | The graded set in the Exercises section. Levels 1–3 required, level 4 stretch | 2–3 weeks | Each exercise compiles, its tests pass, and you checked your answer against the self-check |
 | 3. Self-assessment | The self-assessment at the end of this guide | 1 sitting (3–4 h) | You score ≥ 70% on your own honest marking |
-| 4. Move on | [02 · Anchor Deep-Dive](./02-anchor-deep-dive.md), then [03 · Security Deep-Dive](./03-solana-security-deep-dive.md), using the Bridge section as a map | | |
+| 4. Move on | [02 · Anchor Deep-Dive](./02-anchor-deep-dive.md), then [03 · Solana Security Deep-Dive](./03-solana-security-deep-dive.md), using the Bridge section as a map | | |
 
 If a self-assessment section goes badly, go back to the matching part of this guide before moving on.
 
@@ -41,42 +40,29 @@ If a self-assessment section goes badly, go back to the matching part of this gu
 - Rust via `rustup`, and the Solana CLI (Agave) + Anchor via the official installer on [solana.com/docs/intro/installation](https://solana.com/docs/intro/installation). \[Likely; installer URL may change\]
 - An editor with `rust-analyzer`. Hovering types is how you learn `'info` lifetimes.
 - `cargo install cargo-expand` so you can see what Anchor macros generate (Part D).
-- A scratch Cargo workspace for Part A examples that don't need Solana.
+- You do **not** need a scratch Cargo workspace for Rust-only drills anymore; those live in [00's exercise crate](./exercises/00-rust-fundamentals).
 
-## Part A: The Rust you need for Solana
+> **About the code.** Blocks introduced as a *full program* or *Cargo.toml* are meant to build as written. Every other block is a **snippet**: it shows one idea and omits imports or surrounding code. Solana crates release often, so if an import path has moved in your version, check the crate docs on [docs.rs](https://docs.rs) (and please send a PR). Vulnerable snippets are deliberately broken: don't deploy them. Only run tests against programs you wrote.
 
-Solana programs use a narrow slice of Rust, but they use it hard: borrowed data with explicit lifetimes, shared mutable state through `Rc<RefCell<…>>`, traits for serialization, heavy macros, and raw byte layouts. Learn these ten topics and you can read any Solana codebase. Each topic: the concept, a minimal example, then where it shows up in Solana. \[Certain\]
+## Part A: Rust applied to Solana types
 
-### A.1 Ownership and borrowing: the one rule
+The language itself lives in [00 · Rust Fundamentals](./00-rust-fundamentals.md). This part only shows how those ideas appear in Solana types, plus two topics 00 does not cover: macros, and zero-copy / `repr(C)` layouts. If a Rust idea still feels shaky, go back to the linked section in 00 before continuing. \[Certain\]
 
-Every value has one owner. You can lend it out either as **many shared references** (`&T`, read-only) **or one mutable reference** (`&mut T`), never both at once. The compiler enforces this at compile time.
+| You need this idea | Home in 00 | You will meet it here as |
+| --- | --- | --- |
+| Ownership and borrowing | [§2](./00-rust-fundamentals.md#2-ownership-and-borrowing) | The runtime owns account data and lends it for one instruction |
+| Lifetimes | [§3](./00-rust-fundamentals.md#3-lifetimes) | `AccountInfo<'a>` / `AccountInfo<'info>` |
+| `Rc` and `RefCell` | [§8](./00-rust-fundamentals.md#8-smart-pointers-rc-and-refcell) | `lamports` and `data` on `AccountInfo` |
+| Structs, enums, `match` | [§4](./00-rust-fundamentals.md#4-structs-enums-and-match) | Instruction enums and dispatch (Part C) |
+| `Result`, `?`, custom errors | [§5](./00-rust-fundamentals.md#5-error-handling-option-result--and-thiserror) | `ProgramResult`; never `unwrap()` on user input ([00 §13.2](./00-rust-fundamentals.md#132-panics-are-a-denial-of-service)) |
+| Traits and generics | [§6](./00-rust-fundamentals.md#6-traits-and-generics) | `Owner` / `Discriminator` bounds behind `Account<'info, T>` |
+| Integers, casts, rounding | [§9](./00-rust-fundamentals.md#9-integers-overflow-casts-and-rounding), [§13](./00-rust-fundamentals.md#13-rust-security-for-on-chain-code) | Token amounts are `u64`; math in `u128`; `overflow-checks = true` |
+| Borsh | [§10](./00-rust-fundamentals.md#10-serialization-with-borsh) | Account bytes, then zero-copy / discriminators below |
+| `unsafe`, `no_std` | [§12](./00-rust-fundamentals.md#12-unsafe-and-no_std-recognition-only) | Pinocchio and p-token (recognition only) |
 
-```rust
-let mut balance: u64 = 100;
-let r1 = &balance;          // shared borrow
-let r2 = &balance;          // another shared borrow: fine
-println!("{r1} {r2}");
-let m = &mut balance;       // mutable borrow: fine, r1/r2 are no longer used
-*m -= 10;                   // `*` dereferences to reach the value
-```
+### A.1 `AccountInfo`: one struct, every account
 
-**In Solana:** your program never owns account data. The runtime owns it and *lends* it to you. That is why every account arrives as a reference with a lifetime (`&'a mut [u8]`), and why you will see `borrow()` and `borrow_mut()` everywhere.
-
-### A.2 Lifetimes: what `'info` and `'a` mean
-
-A lifetime is a name for "how long this borrow is valid". You write one when a struct holds a reference, so the compiler can prove the struct does not outlive the data.
-
-```rust
-struct Wrapper<'a> {
-    name: &'a str,           // Wrapper cannot outlive the string it points to
-}
-
-fn longest<'a>(x: &'a str, y: &'a str) -> &'a str {
-    if x.len() > y.len() { x } else { y }
-}
-```
-
-**In Solana:** the input buffer the runtime gives your program lives for the whole instruction. Every `AccountInfo<'a>` (native) or `AccountInfo<'info>` (Anchor) borrows from that buffer. `'info` is just a lifetime name Anchor chose; it means "for the duration of this instruction". When the compiler complains about `'info`, it is almost always because you tried to store an account reference somewhere that lives longer than the instruction, or mixed two structs with different lifetimes.
+Your program never owns account data. The runtime owns it and *lends* it for the duration of the instruction. That is why every account arrives as a reference with a lifetime. `'info` is just a lifetime name Anchor chose; it means "for the duration of this instruction". When the compiler complains about `'info`, you almost always tried to store an account reference somewhere that lives longer than the instruction, or mixed two structs with different lifetimes.
 
 ```rust
 pub struct AccountInfo<'a> {
@@ -91,30 +77,9 @@ pub struct AccountInfo<'a> {
 }
 ```
 
-This struct (from `solana-account-info`) is the most important type in Solana. Read every field type until it makes sense; the next section explains `Rc<RefCell<…>>`. \[Certain\]
+This struct (from `solana-account-info`) is the most important type in Solana. Read every field type until it makes sense. `is_signer` and `is_writable` are **flags on this transaction**, not properties stored in the account (Part B). \[Certain\]
 
-### A.3 `Rc` and `RefCell`: shared mutable state checked at runtime
-
-The borrow rule from A.1 is checked at compile time. Sometimes you need several handles to the same data and still want to mutate it. Two tools:
-
-- **`Rc<T>`** (reference counted): many owners of one value. `Rc::clone(&x)` makes another handle, not a copy of the data.
-- **`RefCell<T>`**: moves the borrow check to *runtime*. `.borrow()` gives a shared borrow, `.borrow_mut()` a mutable one; breaking the rule **panics** (or returns `Err` with `try_borrow_mut`).
-
-```rust
-use std::{cell::RefCell, rc::Rc};
-
-let data = Rc::new(RefCell::new(vec![0u8; 8]));
-let a = Rc::clone(&data);
-let b = Rc::clone(&data);
-
-a.borrow_mut()[0] = 7;          // fine: borrow ends at the semicolon
-println!("{}", b.borrow()[0]);  // prints 7: same data
-
-let _guard = a.borrow_mut();
-// b.borrow_mut();              // would PANIC: already mutably borrowed
-```
-
-**In Solana:** `lamports` and `data` are `Rc<RefCell<&mut …>>` because the same account can appear twice in an instruction (duplicate accounts), and both `AccountInfo`s must point to the same bytes. That's the runtime basis of the duplicate-mutable-accounts bug in the deep-dive. Also, if you hold `account.data.borrow_mut()` and then call a CPI that needs the same account, you get an `AccountBorrowFailed` error: drop your borrow first (end its scope, or `drop(guard)`).
+`lamports` and `data` are `Rc<RefCell<&mut …>>` because the same account can appear twice in one instruction, and both `AccountInfo`s must point to the same bytes. That is the runtime basis of the duplicate-mutable-accounts bug ([04 §1.9](./04-advanced-security-and-exploits.md#19-duplicate-mutable-accounts)). If you hold `account.data.borrow_mut()` and then call a CPI that needs the same account, you get `AccountBorrowFailed`: drop the borrow first (end its scope, or `drop(guard)`). Use `try_borrow_mut` in program code so a conflict is an error, not a panic ([00 §13.6](./00-rust-fundamentals.md#136-refcell-borrow-panics-in-accountinfo)).
 
 ```rust
 // reading and writing lamports in a native program
@@ -123,234 +88,60 @@ let amount = **from.lamports.borrow();          // two derefs: RefCell guard →
 **to.try_borrow_mut_lamports()? += 10;
 ```
 
-### A.4 Structs, enums, `match`, and `Option`/`Result`
+### A.2 Errors stop the whole transaction
 
-Solana instructions are usually an `enum`; dispatch is a `match`.
+Every handler returns `ProgramResult` (`Result<(), ProgramError>`). Returning `Err` aborts the **whole transaction** and rolls back every account change. That is the main safety mechanism: check, and return an error if the check fails. Anchor's `require!(cond, MyError::X)` and `#[error_code]` enums are sugar over this. The `?` operator is the same one taught in [00 §5](./00-rust-fundamentals.md#5-error-handling-option-result--and-thiserror).
 
-```rust
-enum VaultInstruction {
-    Initialize,
-    Deposit { amount: u64 },
-    Withdraw { amount: u64 },
-}
+**Never `unwrap()` on user input in a program.** A panic also aborts the transaction (so it is not a fund-loss bug by itself), but it hides intent and, on a path other users depend on, is a denial of service ([00 §13.2](./00-rust-fundamentals.md#132-panics-are-a-denial-of-service)).
 
-match instruction {
-    VaultInstruction::Initialize => initialize(accounts),
-    VaultInstruction::Deposit { amount } => deposit(accounts, amount),
-    VaultInstruction::Withdraw { amount } => withdraw(accounts, amount),
-}
-```
+The SPL Token program uses its own `COption<Pubkey>` (a C-compatible Option) for `mint_authority` and `freeze_authority`, because the mint's byte layout must be fixed. You will use those fields as a defender in [01, Part E](#part-e-tokens-in-code) and verify them on-chain in [03 §3.6](./03-solana-security-deep-dive.md#36-read-only-verification-explorers-and-the-cli).
 
-`Option<T>` is `Some(value)` or `None`. `Result<T, E>` is `Ok(value)` or `Err(error)`. The SPL Token program even has its own `COption<Pubkey>` (a C-compatible Option) for `mint_authority`, because its byte layout must be fixed.
+### A.3 Traits, as `Account<'info, T>` uses them
 
-### A.5 Error handling: `?` and custom errors
-
-`?` means: if this is `Err`, return that error from the current function now; otherwise unwrap the value.
+[00 §6](./00-rust-fundamentals.md#6-traits-and-generics) is the home for traits and generics. Here is the Solana form. A trait can describe the *type*, not a value:
 
 ```rust
-fn parse(data: &[u8]) -> Result<u64, ProgramError> {
-    let bytes: [u8; 8] = data
-        .get(..8)                                  // Option<&[u8]>
-        .ok_or(ProgramError::InvalidInstructionData)? // Option → Result, then `?`
-        .try_into()
-        .map_err(|_| ProgramError::InvalidInstructionData)?;
-    Ok(u64::from_le_bytes(bytes))
-}
-```
-
-**In Solana:** every handler returns `ProgramResult` (= `Result<(), ProgramError>`). Returning `Err` aborts the **whole transaction** and rolls back every account change. That is your main safety mechanism: check, and return an error if the check fails. Anchor adds `require!(cond, MyError::X)` and `#[error_code]` enums, which are just sugar over this.
-
-**Never `unwrap()` on user input in a program.** A panic also aborts the transaction (so it's not a fund-loss bug by itself), but it hides intent and makes errors useless for debugging.
-
-### A.6 Traits and generics
-
-A **trait** is a promise that a type makes: "I have these functions." **Generics** let you write one function that works for any type that kept the promise. Solana code, and Anchor especially, is built on both. \[Certain\]
-
-**Step 1: the problem.** Say you have two types and want each to describe itself.
-
-```rust
-struct Dog { name: String }
-struct Car { model: String }
-```
-
-You could write `describe_dog()` and `describe_car()`, but every new type needs its own function, and nothing can work with "anything describable".
-
-**Step 2: a trait is the promise.**
-
-```rust
-trait Describe {
-    fn describe(&self) -> String;   // only the signature: no body
-}
-```
-
-On its own this does nothing. It says: "a type that is `Describe` has a `describe` method returning a `String`."
-
-**Step 3: types keep the promise with `impl`.**
-
-```rust
-impl Describe for Dog {
-    fn describe(&self) -> String { format!("dog named {}", self.name) }
-}
-impl Describe for Car {
-    fn describe(&self) -> String { format!("car model {}", self.model) }
-}
-```
-
-Each type writes its own body. The compiler checks the signature matches the trait exactly.
-
-**Step 4: generics, one function for every type that kept the promise.**
-
-```rust
-fn print_it<T: Describe>(item: &T) {
-    println!("{}", item.describe());
-}
-
-print_it(&Dog { name: "Rex".into() });     // T = Dog
-print_it(&Car { model: "Civic".into() });  // T = Car
-```
-
-Read `<T: Describe>` as: **"T is a placeholder for some type, and that type must implement `Describe`."** The `: Describe` part is a **trait bound**. It is the reason you may call `item.describe()`:
-
-```rust
-fn print_it<T>(item: &T) {
-    println!("{}", item.describe());   // ERROR: no method `describe` found for `&T`
-}
-```
-
-Without the bound, `T` could be any type (like `u64`, which has no `describe`), so the compiler refuses. At compile time Rust makes a separate copy of `print_it` for each type you actually use, so generics cost nothing at runtime.
-
-**Step 5: a trait function with no `self`.** Some trait functions answer a question about the *type*, not a value:
-
-```rust
-trait Owner {
-    fn owner() -> Pubkey;   // no &self: "which program owns accounts of this type?"
-}
-```
-
-You call these on the type with `::`, not on a value with `.`:
-
-```rust
-Vault::owner()      // ✅ called on the type
-my_vault.owner()    // ❌ not how this one works
-T::owner()          // ✅ inside a generic: "the owner for whatever type T is"
-```
-
-**Step 6: the Solana example, line by line.**
-
-```rust
-trait Owner { fn owner() -> Pubkey; }                              // the promise
+trait Owner { fn owner() -> Pubkey; }
 
 struct Vault { amount: u64 }
-impl Owner for Vault { fn owner() -> Pubkey { crate::ID } }        // Vault keeps it
+impl Owner for Vault { fn owner() -> Pubkey { crate::ID } }
 
 fn check_owner<T: Owner>(acc: &AccountInfo) -> Result<(), ProgramError> {
     if *acc.owner != T::owner() { return Err(ProgramError::IllegalOwner); }
     Ok(())
 }
 
-check_owner::<Vault>(vault_info)?;    // compares acc.owner with Vault::owner()
-check_owner::<Config>(config_info)?;  // works for any type that implements Owner
+check_owner::<Vault>(vault_info)?;
 ```
 
-You write the owner check once instead of once per account type. `::<Vault>` tells the compiler which type `T` is in this call.
+You write the owner check once. `#[account] pub struct Vault { … }` makes the Anchor macro write `impl Owner for Vault`, `impl Discriminator for Vault` and the serialization traits for you. `Account<'info, Vault>` then runs a generic check: is the account's owner `Vault::owner()`, and do its first 8 bytes equal `Vault`'s discriminator? That proves "owned by this program and really a `Vault`", and nothing about *which* vault. Other traits you will meet constantly: `BorshSerialize`/`BorshDeserialize`, `Pack` (SPL Token), `Pod`/`Zeroable` (bytemuck), `Accounts`, `ToAccountInfos`, `Key`. The macros behind this are in A.4; the full Anchor expansion is [02](./02-anchor-deep-dive.md).
 
-**In Solana / Anchor:** this is exactly how `Account<'info, T>` works. `#[account] pub struct Vault {...}` makes the macro write `impl Owner for Vault`, `impl Discriminator for Vault` and the serialization traits for you. `Account<'info, Vault>` then runs a generic check: is the account's owner `Vault::owner()`, and do its first 8 bytes equal `Vault`'s discriminator? That's why it proves "owned by this program and really a `Vault`", and nothing about *which* vault. Other traits you'll meet constantly: `BorshSerialize`/`BorshDeserialize`, `Pack` (SPL Token), `Pod`/`Zeroable` (bytemuck), `Accounts`, `ToAccountInfos`, `Key`.
+If `owner()` returned `system_program::ID` instead of `crate::ID`, the check would accept plain wallets as vaults and reject real ones.
 
-**Check yourself**
+### A.4 Macros: what you see is not what runs
 
-1. Add a `Config` struct and make `check_owner::<Config>` compile. What must you write?
-2. Why can't you write `fn check_owner<T>(...)` without `: Owner`?
-3. In `impl Owner for Vault`, what happens if `owner()` returns `system_program::ID` instead of `crate::ID`?
-
-Answers: (1) `impl Owner for Config { fn owner() -> Pubkey { crate::ID } }`. (2) Without the bound, `T` might not have `owner()`, so `T::owner()` doesn't compile. (3) The check would accept accounts owned by the System Program (plain wallets) as vaults and reject real ones: a broken owner check.
-
-### A.7 Macros: code that writes code
-
-Two kinds:
+00 does not cover macros. Two kinds appear everywhere on Solana:
 
 - **Declarative** (`macro_rules!`, called with `!`): `msg!`, `require!`, `entrypoint!`, `declare_id!`.
 - **Procedural**: attributes and derives that rewrite your code at compile time: `#[program]`, `#[derive(Accounts)]`, `#[account]`, `#[derive(BorshSerialize)]`.
 
-The security consequence: **what you see is not what runs.** `#[derive(Accounts)]` generates the validation code. To audit it, run `cargo expand` and read the output. Part D does this.
+The security consequence: **what you see is not what runs.** `#[derive(Accounts)]` generates the validation code. To audit it, run `cargo expand` and read the output. Part D does this, and [02](./02-anchor-deep-dive.md) is the full map.
 
-### A.8 Integers: overflow, casts, and rounding
+### A.5 Account bytes: Borsh, `repr(C)`, zero-copy, discriminators
 
-```rust
-let a: u64 = u64::MAX;
-let b = a.checked_add(1);         // None: overflow detected
-let c = a.wrapping_add(1);        // 0: silently wraps
-let d = a.saturating_add(1);      // u64::MAX: clamps
-// let e = a + 1;                 // debug: panic. release: wraps UNLESS overflow-checks = true
+Account data is just a row of bytes. Solana has no idea what's inside. [00 §10](./00-rust-fundamentals.md#10-serialization-with-borsh) is the home for Borsh sizes and rules (`Vec`/`String` length prefixes, `Option` tags, little-endian integers, no type names). This section is only what you do with those bytes in a program. \[Certain\]
 
-let big: u128 = 1 << 70;
-let t = big as u64;               // silently TRUNCATES. Dangerous.
-let s = u64::try_from(big);       // Err: safe
-
-let shares = 7u64 / 2;            // 3: integer division always rounds DOWN
-let up = (7u64 + 2 - 1) / 2;      // 4: ceiling division
-```
-
-**In Solana:** every token amount is a `u64` in the smallest unit (`decimals` says where the point goes). Math is done in `u128` to avoid overflow during multiplication, then converted back with `try_from`. Check `Cargo.toml` for `overflow-checks = true` under `[profile.release]`. Rounding direction decides who loses the dust: the protocol should always round in its own favour.
-
-### A.9 Bytes and layout: Borsh, `repr(C)`, zero-copy
-
-One fact drives this whole topic: **account data is just a row of bytes.** Solana has no idea what's inside. Your program must turn bytes into a struct when reading, and the struct back into bytes when writing. \[Certain\]
-
-**Step 1: how values become bytes.** Every type has a fixed size:
-
-| Type | Bytes |
-| --- | --- |
-| `u8`, `bool` | 1 |
-| `u16` | 2 |
-| `u32` | 4 |
-| `u64` | 8 |
-| `u128` | 16 |
-| `Pubkey` | 32 |
-
-Numbers are stored **little-endian** (smallest byte first):
+**Read, change, write back.** The struct you deserialize is a **copy**. Forget the write-back and your change is silently lost. In Anchor, the write-back happens automatically for `mut` accounts, which is why changes without `mut` vanish (Part D).
 
 ```rust
-300u64.to_le_bytes()  // [44, 1, 0, 0, 0, 0, 0, 0]   because 44 + 1×256 = 300
-```
-
-**Step 2: Borsh puts fields in a row.** Borsh, the format most Solana programs use, writes each field in order, back to back, with no gaps:
-
-```rust
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct Counter {
-    pub authority: [u8; 32],
-    pub count: u64,
-}
-```
-
-```text
-bytes 0..32   authority   (32 bytes)
-bytes 32..40  count       (8 bytes, little-endian)
-total: 40 bytes
-```
-
-No field names, no type name: only values. Two more rules: `Vec<T>` and `String` start with a **4-byte length** then the items (a `Vec<u16>` with 3 items = 4 + 3×2 = 10 bytes); `Option<T>` starts with **1 byte** (`0` = `None`, `1` = `Some`) followed by the value.
-
-**Step 3: read, change, write back.**
-
-```rust
-// 1. READ: copy the bytes out of the account into a Rust struct
 let mut c = Counter::try_from_slice(&account.data.borrow())?;
-
-// 2. CHANGE: edit the copy (the account has NOT changed yet)
 c.count += 1;
-
-// 3. WRITE BACK: turn the struct into bytes, written into the account
 c.serialize(&mut &mut account.data.borrow_mut()[..])?;
 ```
 
-`c` is a **copy**. Forget step 3 and your change is silently lost. In Anchor, step 3 happens automatically for `mut` accounts, which is why changes without `mut` vanish (Part D).
+`try_from_slice` fails if bytes are **left over**. If the account is 50 bytes but `Counter` is 40, it errors. Size the account exactly, or use `deserialize`, which ignores extra bytes (Anchor does this). About `&mut &mut`: `serialize` writes into a `&mut [u8]` and needs a mutable reference to that slice so it can move forward. Copy the pattern.
 
-About `&mut &mut`: `serialize` writes into anything writable; a `&mut [u8]` slice is writable and moves forward as bytes go in; to let it move, Borsh needs a mutable reference to the slice itself. Copy the pattern; you don't need more than that.
-
-One trap: `try_from_slice` fails if bytes are **left over**. If the account is 50 bytes but `Counter` is 40, it errors. Size the account exactly, or use `deserialize`, which ignores extra bytes (Anchor does this).
-
-**Step 4: zero-copy, reading in place.** Copying is fine for small accounts. For big ones (an order book of 50 KB), copying costs compute units and doesn't fit the program's 4 KB stack frames. Zero-copy treats the bytes **as the struct, right where they are**. The catch: the CPU wants numbers at aligned addresses (a `u64` at a multiple of 8), so Rust inserts invisible **padding**, and `#[repr(C)]` makes that layout predictable:
+**Zero-copy.** Copying is fine for small accounts. For big ones (an order book of 50 KB), copying costs compute units and doesn't fit the program's 4 KB stack frames. Zero-copy treats the bytes **as the struct, right where they are**. The CPU wants numbers at aligned addresses (a `u64` at a multiple of 8), so Rust inserts invisible **padding**, and `#[repr(C)]` makes that layout predictable:
 
 ```rust
 #[repr(C)]
@@ -362,16 +153,16 @@ struct Example { a: u8, b: u64 }
 | Borsh | `a` (1) + `b` (8) | 9 bytes |
 | `repr(C)` in memory | `a` (1) + **padding (7)** + `b` (8) | 16 bytes |
 
-Same struct, two layouts, so **never mix the formats**. Libraries like `bytemuck` refuse structs with hidden padding; you add explicit fields (`_pad: [u8; 7]`) so every byte is accounted for. Without `#[repr(C)]`, Rust may reorder fields. You'll see zero-copy as `#[account(zero_copy)]` + `AccountLoader` in Anchor, `bytemuck::from_bytes` in native code, and pointer casts in Pinocchio.
+Same struct, two layouts, so **never mix the formats**. Libraries like `bytemuck` refuse structs with hidden padding; you add explicit fields (`_pad: [u8; 7]`) so every byte is accounted for. Without `#[repr(C)]`, Rust may reorder fields. You'll see zero-copy as `#[account(zero_copy)]` + `AccountLoader` in Anchor ([02 §6.4](./02-anchor-deep-dive.md#64-zero-copy-for-large-accounts)), `bytemuck::from_bytes` in native code, and pointer casts in Pinocchio.
 
-**Step 5: why the discriminator exists.** Bytes carry no type, so these two structs look identical in an account:
+**Why the discriminator exists.** Bytes carry no type, so these two structs look identical in an account:
 
 ```rust
 struct Counter { authority: Pubkey, count: u64 }  // 40 bytes
 struct Config  { admin: Pubkey,     fee: u64 }    // 40 bytes
 ```
 
-Read a `Config` as a `Counter` and Borsh succeeds: `admin` becomes `authority`, `fee` becomes `count`. An attacker who is `admin` of some `Config` can pass it where a `Counter` is expected and act as its `authority`. That's the **type cosplay** bug. The fix is a type tag at the start:
+Read a `Config` as a `Counter` and Borsh succeeds: `admin` becomes `authority`, `fee` becomes `count`. An attacker who is `admin` of some `Config` can pass it where a `Counter` is expected and act as its `authority`. That's the **type cosplay** bug ([04 §1.3](./04-advanced-security-and-exploits.md#13-account-confusion-and-type-cosplay)). The fix is a type tag at the start:
 
 ```text
 bytes 0..8    discriminator   ← "this is a Counter"
@@ -381,22 +172,13 @@ bytes 40..48  count
 
 Anchor's `#[account]` writes `sha256("account:Counter")[..8]` there and `Account<'info, Counter>` rejects anything else; that's why Anchor space is always `8 + …`. In Part C you do it by hand with `VAULT_DISC`.
 
-**Check yourself**
+### A.6 `unsafe`, `no_std`, and Pinocchio (recognition only)
 
-1. How many Borsh bytes is `struct S { a: u8, b: Vec<u64>, c: Pubkey }` when `b` holds 2 items?
-2. You call `try_from_slice`, change a field, and return `Ok(())`. What's in the account afterwards?
-3. Why would `try_from_slice` fail on a 48-byte Anchor account holding a 40-byte struct?
-4. Two account types both start with a 32-byte pubkey. What stops one being passed as the other in Anchor? In Part C?
+Programs run in a 4 KB-frame stack, 32 KB heap VM. High-performance frameworks (Pinocchio, p-token) avoid allocations and parse the input buffer with raw pointers inside `unsafe` blocks. You don't need to write `unsafe` yet; you need to recognize that **inside `unsafe`, the compiler stops protecting you**, so auditors read those blocks line by line (bounds, alignment, aliasing). The recognition checklist is [00 §12](./00-rust-fundamentals.md#12-unsafe-and-no_std-recognition-only) and [00 §13.9](./00-rust-fundamentals.md#139-unsafe-and-undefined-behaviour). \[Certain\]
 
-Answers: (1) 1 + (4 + 2×8) + 32 = 53. (2) The old value: you only changed the copy. (3) The 8-byte discriminator comes first, so the bytes don't line up; strip it first, as Anchor does. (4) Anchor: the discriminator check in `Account<T>`. Part C: the owner check plus `VAULT_DISC` in `load_vault`.
+### A.7 Rust security, not repeated
 
-### A.10 `unsafe`, `no_std`, and Pinocchio (recognition only)
-
-Programs run in a 4 KB-frame stack, 32 KB heap VM. High-performance frameworks (Pinocchio, p-token) avoid allocations and parse the input buffer with raw pointers inside `unsafe` blocks. You don't need to write `unsafe` yet; you need to recognize that **inside `unsafe`, the compiler stops protecting you**, so auditors read those blocks line by line (bounds, alignment, aliasing). \[Certain\]
-
-### A.10a Rust security quick list
-
-Six Rust habits that prevent a large share of real Solana findings. Each is covered in depth in [guide 00, §13](./00-rust-fundamentals.md#13-rust-security-for-on-chain-code), with program-level examples in [guide 04, §1.16](./04-advanced-security-and-exploits.md#116-rust-level-bugs-panics-compute-memory-and-the-supply-chain):
+Six habits that prevent a large share of real Solana findings. Each is covered in depth in [00 §13](./00-rust-fundamentals.md#13-rust-security-for-on-chain-code), with program-level examples in [04 §1.16](./04-advanced-security-and-exploits.md#116-rust-level-bugs-panics-compute-memory-and-the-supply-chain):
 
 1. `overflow-checks = true` in the workspace `[profile.release]`, **and** `checked_*` arithmetic on anything a user influences.
 2. No `unwrap()`, `expect()`, `a[i]` or unchecked `/` in program code: a panic in an instruction others rely on is a denial of service.
@@ -405,15 +187,26 @@ Six Rust habits that prevent a large share of real Solana findings. Each is cove
 5. Drop `RefCell` borrows (`try_borrow_mut_data`, zero-copy `load_mut`) before any CPI.
 6. Bound every loop and every user-growable collection: compute is a budget an attacker can spend for you.
 
-### A.11 Self-check
+### A.8 Self-check
 
 You're ready for Part B when you can answer, without looking:
 
 1. Why is `AccountInfo::data` an `Rc<RefCell<&mut [u8]>>` and not a `&mut [u8]`?
-2. What happens at runtime if you call `borrow_mut()` twice on the same `RefCell` without dropping the first?
-3. What does `?` do on an `Err`? On a `None` (inside a function returning `Option`)?
-4. What does `x as u64` do when `x: u128` is larger than `u64::MAX`?
-5. Why can't a Borsh-serialized struct tell you what type it is?
+2. What happens at runtime if you call `borrow_mut()` twice on the same `RefCell` without dropping the first? What should program code use instead?
+3. You call `try_from_slice`, change a field, and return `Ok(())`. What's in the account afterwards?
+4. Why would `try_from_slice` fail on a 48-byte Anchor account holding a 40-byte struct?
+5. Two account types both start with a 32-byte pubkey. What stops one being passed as the other in Anchor? In Part C?
+
+<details>
+<summary>Answers</summary>
+
+1. The same account can appear twice in one instruction; both `AccountInfo`s must share one buffer, so the "one mutable borrow" rule is enforced at runtime ([00 §8](./00-rust-fundamentals.md#8-smart-pointers-rc-and-refcell)).
+2. It panics (`already mutably borrowed`). Use `try_borrow_mut` and return an error.
+3. The old value: you only changed the copy.
+4. The 8-byte discriminator comes first, so the bytes don't line up; strip it first, as Anchor does.
+5. Anchor: the discriminator check in `Account<T>`. Part C: the owner check plus `VAULT_DISC` in `load_vault`.
+
+</details>
 
 ## Part B: Solana terms, as they look in code
 
@@ -972,6 +765,8 @@ Tokens are the reason most Solana programs exist, and the token program's accoun
 
 Token-2022 accounts start with the same bytes, then an account-type byte and TLV extensions. \[Certain\]
 
+**Authorities a defender records.** `mint_authority` and `freeze_authority` (and, on Token-2022, the extension list) are powers someone can use against holders and against a vault that custodians the mint. Part E shows you where those fields live. How to look them up on a *live* mint, without sending a transaction, is [03 §3.6](./03-solana-security-deep-dive.md#36-read-only-verification-explorers-and-the-cli). The bug-class view is [04 §1.14](./04-advanced-security-and-exploits.md#114-token-2022-extension-pitfalls) and [04 §1.15](./04-advanced-security-and-exploits.md#115-upgrade-authority-and-admin-key-risk).
+
 ### E.2 Reading a token account (native)
 
 ```rust
@@ -1229,12 +1024,73 @@ In an audit, if forging the account is the only way to reach the bug, ask whethe
 
 Do them in order. Levels 1–3 are the core; level 4 is a stretch. Each exercise is done when it compiles, has at least one test, and you can explain why it works. Tick them off here as you go.
 
-### Level 1: Rust (Part A)
+### Level 1: the account model, and spotting a missing check (Parts A, B)
 
-- [ ] **1.1 RefCell panic.** Write a program that panics with `already mutably borrowed`. Then fix it two ways: with a scope block, and with `drop()`. Then rewrite it with `try_borrow_mut()` returning an error instead of panicking.
-- [ ] **1.2 Parse bytes.** Write `fn read_u64_at(data: &[u8], offset: usize) -> Result<u64, String>` that never panics, for any input. Test with an empty slice, an offset past the end, and `usize::MAX`.
-- [ ] **1.3 Share math.** Write `deposit_shares(amount, total_assets, total_shares) -> Option<u64>` and `withdraw_assets(shares, total_assets, total_shares) -> Option<u64>` using `u128` internally. Deposit rounds shares **down**, withdraw rounds assets **down**. Write a test showing a user can't get back more than they put in after 1,000 round trips.
-- [ ] **1.4 Borsh layout.** Serialize a struct `{ a: u8, b: u64, c: Vec<u16> }` with Borsh and print the bytes. Predict the length before running.
+These replace the Rust-only drills, which now live only in [guide 00](./00-rust-fundamentals.md#14-exercises). If share math, `RefCell`, or Borsh layouts still feel shaky, do 00's Level 3 first.
+
+- [ ] **1.1 Spot the red flag.** The withdraw snippet below is deliberately incomplete. Name every missing check, the sentence the program never proved, and the one-line fix for each. Do not write an attack script; this is a reading exercise.
+
+```rust
+// SNIPPET for detection only. Deliberately incomplete. Do not deploy.
+fn withdraw(accounts: &[AccountInfo], amount: u64) -> ProgramResult {
+    let authority = &accounts[0];
+    let vault     = &accounts[1];
+    let recipient = &accounts[2];
+
+    let mut data = Vault::try_from_slice(&vault.data.borrow())?;
+    data.amount  = data.amount.checked_sub(amount).ok_or(ProgramError::InsufficientFunds)?;
+    data.serialize(&mut &mut vault.data.borrow_mut()[..])?;
+
+    **vault.try_borrow_mut_lamports()?     -= amount;
+    **recipient.try_borrow_mut_lamports()? += amount;
+    Ok(())
+}
+```
+
+- [ ] **1.2 Account-model quiz.** Answer without looking, then open the hint if you are stuck:
+  1. Who sets `is_signer` and `is_writable` — the program, or the client?
+  2. Why can't a native program use `system_program::transfer` to move lamports out of a vault PDA that holds data?
+  3. What is the difference between `AccountInfo.owner` and a token account's `owner` field?
+  4. Why does `find_program_address` loop downward from bump 255?
+  5. An attacker sends 1 lamport to a vault PDA before `initialize`. What happens, and why?
+
+- [ ] **1.3 Read-only walkthrough: official programs.** Using only a block explorer and/or the Solana CLI, look up these **documented** program IDs (they are the official System and Token programs; do not substitute a random token):
+
+  - System Program: `11111111111111111111111111111111`
+  - SPL Token: `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`
+
+  Open each in [Solana Explorer](https://explorer.solana.com) (`/address/<ID>`) or [Solscan](https://solscan.io) (`/account/<ID>`), and/or run `solana program show <ID>` ([docs](https://solana.com/docs/programs/deploying)). Write down, for each: whether it is executable, which loader/owner the page reports, and what the CLI puts in the `Authority` field if it prints one. You are practising the habit, not memorizing a famous answer. The same habit, applied to a *protocol* program and a *mint*, is [03 §3.6](./03-solana-security-deep-dive.md#36-read-only-verification-explorers-and-the-cli).
+
+- [ ] **1.4 Checklist: a described mint (hypothetical).** A write-up (not a real token) says: "HarborUSD is a stablecoin. The team keeps mint authority and freeze authority on the same wallet so they can 'react quickly'. Liquidity will be added on an AMM next week." No address is given, and you should not invent one. List: (a) what the holder of mint authority can do; (b) what freeze authority can do to a depositor's token account; (c) what you would still need to verify on-chain before treating this as safe collateral, in the vocabulary of Part B and Part E. Fuller verification steps are in [03 §3.6](./03-solana-security-deep-dive.md#36-read-only-verification-explorers-and-the-cli).
+
+<details>
+<summary>Level 1 hints</summary>
+
+- **1.1** Walk the checklist from Part C.3: owner, signer, destination, PDA/identity, arithmetic, aliasing (`vault == recipient`). The snippet also never writes a discriminator check.
+- **1.2** (1) Part B.3–B.4. (2) Part B.7 and C — System `Transfer` requires a System-owned account with no data. (3) Part E and B. (4) Part B.5. (5) Exercise 2.3 and C.4.
+- **1.3** Official explorers and `solana program show` are read-only. If the CLI errors because the account is a native builtin, record that fact: not every program is an upgradeable-loader program.
+- **1.4** Mint authority can increase supply. Freeze authority can freeze token accounts so they cannot transfer. "The team said they will be responsible" is not a check.
+
+</details>
+
+<details>
+<summary>Level 1 answers</summary>
+
+**1.1** Missing sentences and fixes (any equivalent wording is fine):
+
+- "This vault is owned by our program" — check `vault.owner == program_id` (and, in Part C, the discriminator).
+- "The authority is the one stored in the vault, and they signed" — require `authority.is_signer` and `authority.key == data.authority` (or the equivalent PDA derivation).
+- "This is the vault we derived, not a substitute" — re-derive the PDA / check identity.
+- "The recipient is a real destination, and is not the vault itself" — reject `vault.key == recipient.key`; confirm recipient is writable and is the intended account.
+- "The lamport debit cannot underflow and the credit cannot overflow" — the `checked_sub` on `data.amount` is good; the raw `-=` / `+=` on lamports is not.
+
+**1.2** (1) The client, via `AccountMeta`; the program can only check. (2) System `Transfer` requires `from` to be System-owned with no data; a vault PDA that holds state must be debited by its owner program. (3) `AccountInfo.owner` is the program that owns the account (the Token program for a token account); the token account's `owner` field is the wallet or PDA that controls the tokens. (4) It searches for the canonical (first off-curve) bump, starting at 255. (5) `CreateAccount` fails because the address already holds lamports: the victim can never initialize (a pre-funding DoS).
+
+**1.3** There is no single required paragraph. A complete answer records executable / owner / authority (or "CLI cannot show Authority because this is a builtin") for both IDs, and says which tool produced each fact.
+
+**1.4** (a) Mint more HarborUSD, diluting holders and any vault that prices the token as if supply were fixed. (b) Freeze a user's (or a protocol vault's) token account, which blocks transfers, liquidations and withdrawals. (c) On-chain you still need the mint's actual `mint_authority` and `freeze_authority` (present or `None`), the token program that owns the mint, any Token-2022 extensions, who holds LP tokens if a pool exists, and whether the program that will custody the token is upgradeable. Marketing text is not a source.
+
+</details>
 
 ### Level 2: Native programs (Parts B, C, F)
 
@@ -1242,6 +1098,16 @@ Do them in order. Levels 1–3 are the core; level 4 is a stretch. Each exercise
 - [ ] **2.2 Add `Close`.** Add an instruction that sends all lamports to the authority and closes the vault. Requirements: authority signs, zero the data, assign the account back to the System Program, and the recipient must not be the vault itself. Write a test that a second `Withdraw` on the closed vault fails.
 - [ ] **2.3 Fix the pre-funding DoS.** Write a test where an attacker sends 1 lamport to the victim's future vault PDA before `initialize`, and show `initialize` fails. Then fix `initialize` (transfer the shortfall, then `allocate` and `assign` with `invoke_signed`) and show the test passes.
 - [ ] **2.4 Duplicate accounts.** Write a test passing the vault as both `vault` and `recipient` in `Withdraw`. Explain what happens to the lamports, and add a check if you think one is needed.
+
+<details>
+<summary>Level 2 hints</summary>
+
+- **2.1** Get the F.2 test green first. Removing check (3) should make the 'attack must fail' test itself fail.
+- **2.2** Close requirements are listed in the exercise; C.4.5 is the checklist.
+- **2.3** `CreateAccount` fails on a pre-funded address; the fix is transfer-shortfall + `allocate` + `assign` with `invoke_signed`.
+- **2.4** Pass the same pubkey in two roles and look at the lamport change. Aliasing is the lesson; 04 §1.9 is the full class.
+
+</details>
 
 ### Level 3: Anchor and tokens (Parts D, E)
 
@@ -1267,6 +1133,16 @@ pub struct Claim<'info> {
 }
 ```
 
+<details>
+<summary>Level 3 hints</summary>
+
+- **3.1** `close = authority` is the Anchor form of 2.2. `cargo expand` is the point of the exercise.
+- **3.2** Remove *one* constraint at a time. `seeds` can still bind an account after you remove `has_one` — see D.5.
+- **3.3** Per-user PDA seeds must include the user. Reuse the share math from 00, not a new formula.
+- **3.4** Four (actually five) missing proofs: signer, scoped PDA, relationships, token program pinned, and `mut` on a PDA that doesn't need it.
+
+</details>
+
 ### Level 4: Stretch
 
 - [ ] **4.1** Write PoCs for sealevel-attacks 0–3 (signer authorization, account data matching, owner checks, type cosplay) using LiteSVM.
@@ -1275,7 +1151,7 @@ pub struct Claim<'info> {
 
 ### Answers (read only after trying)
 
-**Part A self-check.** (1) The same account can appear twice in one instruction; both `AccountInfo`s must share one buffer, so mutability is checked at runtime. (2) It panics (`already mutably borrowed`); `try_borrow_mut` returns `Err` instead. (3) It returns early with that `Err` / `None`. (4) It keeps the low 64 bits and silently drops the rest. (5) Borsh writes only field values, no type names, so any bytes of the right length decode as any struct of that shape.
+**Part A self-check.** Answers are now under [A.8](#a8-self-check), next to the questions. The older five-question Rust recap lives in [00, Self-check](./00-rust-fundamentals.md#self-check).
 
 **Part B self-check.** (1) The client, via `AccountMeta`; the program can only check. (2) A PDA has no private key, and `create_account` requires the new account to sign; `invoke_signed` supplies that signature from seeds. (3) `account.owner` is the program that owns the account (Token program); the token account's `owner` field is the wallet/PDA that controls the tokens. (4) It tries bumps from 255 downward, hashing each time until one is off-curve. (5) The IDL in `target/idl/`.
 
@@ -1299,7 +1175,8 @@ When levels 1–3 are done (and after [02 · Anchor Deep-Dive](./02-anchor-deep-
 | 1.4 Rent | B.6, C check (7), exercise 2.3 | Explain the pre-funding DoS using your own test |
 | 1.5 PDAs | B.5, C check (5), E (vault authority) | Say why `[b"authority", mint]` in Part E is shared and what that requires |
 | 1.6 Transactions, duplicates, introspection | B.3, exercise 2.4 | Explain duplicates using the `Rc<RefCell<…>>` model from A.3 |
-| 2 Anchor | D, exercise 3.1–3.4 | Do deep-dive exercise 2.4 in under 10 minutes |
+| 2 Anchor, as an auditor | D, exercise 3.1–3.4 | Do deep-dive exercise 2.3 in under 10 minutes |
+| 3.6 Read-only verification | B.1, E, exercise 1.3–1.4 | Fill an upgrade-authority and mint-authority sheet from an explorer without sending a transaction |
 | 3.1 System Program | B.6, B.7, C | Say why `withdraw` in Part C can't use System `transfer` |
 | 3.2–3.4 Token, ATA, Token-2022 | E, exercise 3.3, 4.3 | Name the two "owners" and the transfer-fee pattern without notes |
 | 3.5 Upgradeable loader | B.1 (upgrade authority) | Explain why upgrade authority is a trust assumption |

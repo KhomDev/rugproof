@@ -19,9 +19,11 @@ By the end of this guide you can:
 
 ## Prerequisites
 
-Parts A–D of [01 · Solana Foundations](./01-solana-foundations.md). If traits, `Option`, or the Part C native vault still feel shaky, go back first; this guide assumes them.
+**Prerequisites:** Parts B–E of [01 · Solana Foundations](./01-solana-foundations.md) (you have already ported a native vault to Anchor in 01, Part D). If traits, `Option`, or the Part C native vault still feel shaky, go back to 01 before continuing. Rust itself stays in [00](./00-rust-fundamentals.md).
 
-**Where it fits:** Foundations teaches the language and the platform; this guide teaches the framework in depth; the [Security Deep-Dive](./03-solana-security-deep-dive.md) teaches how things break. Read this one after Foundations' exercises and before the Security Deep-Dive.
+**This file covers:** a real Anchor project's anatomy; the instruction lifecycle and what `#[program]` generates; every account wrapper and constraint; state, space, zero-copy, realloc and close; CPIs, errors, events; `anchor_spl` and how Anchor expresses Token-2022; IDLs; testing; and 14 Anchor-specific bug patterns plus a per-instruction checklist. This is the home for Anchor.
+
+**This file does not cover:** the account model or writing a native program ([01](./01-solana-foundations.md)); the System / Token / loader invariants or explorer verification ([03](./03-solana-security-deep-dive.md)); or the full vulnerable-vs-fixed catalogue and incidents ([04](./04-advanced-security-and-exploits.md)). When an Anchor pattern is an instance of a 04 class, the text links there.
 
 ### Versions you will meet
 
@@ -1088,6 +1090,8 @@ Anchor reliably prevents the *mechanical* bugs (wrong owner, wrong type, missing
 
 ### 12.2 Anchor-specific bug patterns
 
+Each of these is an Anchor-shaped instance of a class in [04, Part 1](./04-advanced-security-and-exploits.md#part-1-bug-classes). This list stays the home for how the *macro* goes wrong; 04 is the home for the vulnerable snippet next to the fix.
+
 **1. Relationship missing.** All types are right, nothing ties them together.
 
 ```rust
@@ -1171,7 +1175,54 @@ Anchor validates accounts; it does nothing for the Rust in your handler. The sam
 
 ## Exercises
 
-Build one project, a **staking pool**, across these exercises. Each builds on the last. Every exercise needs a LiteSVM test.
+E0 is a reading exercise (no LiteSVM). Then build one project, a **staking pool**, across E1–E7. Each of those builds on the last and needs a LiteSVM test.
+
+### E0 Spot the red flag (section 5, before you write code)
+
+The struct below is deliberately incomplete. For each field, write the "this account is proven to be …" sentence. Then list the missing proofs and the constraint or wrapper that would add them. This is a reading exercise; do not turn it into an attack script.
+
+```rust
+// SNIPPET for detection only. Deliberately incomplete. Do not deploy.
+#[derive(Accounts)]
+pub struct SetFee<'info> {
+    #[account(mut)]
+    pub config: Account<'info, Config>,
+    pub admin: AccountInfo<'info>, // CHECK: must be the admin
+    pub new_treasury: SystemAccount<'info>,
+}
+```
+
+<details>
+<summary>E0 hint</summary>
+
+`Account<Config>` proves owner and type, not *which* config, and not that `admin` signed or matches `config.admin`. `/// CHECK:` is a comment. Ask what happens if `SetFee` also writes `config.treasury = new_treasury.key()`.
+
+</details>
+
+<details>
+<summary>E0 answer</summary>
+
+- `config`: program-owned `Config`, writable. Not proven: it is *the* config (needs `seeds = [b"config"]` or `address = …`).
+- `admin`: nothing. Not a `Signer`, not `has_one = admin`, not `address = config.admin`. Anyone can pass the admin's pubkey. Fix: `pub admin: Signer<'info>` plus `has_one = admin` on `config` (or `constraint = admin.key() == config.admin` **and** `Signer`).
+- `new_treasury`: a System-owned account. Not proven: it is an intended treasury (could be the attacker's wallet). If the handler assigns it as the new fee destination, that is an admin-equivalent action and must be gated by the same signer check, and usually a timelock or on-chain bound in a real program.
+- Also missing: any on-chain bound on the new fee, if the instruction takes `fee_bps` as an argument (E1).
+
+</details>
+
+### Hints for E1–E7
+
+<details>
+<summary>Hints</summary>
+
+- **E1** Gate `set_fee` with both a `Signer` and a relationship to `config.admin`. Assert on your custom error, not on a generic transaction failure.
+- **E2** The sentence above each field should be something you could defend in a report. If you cannot write it, the constraint is missing. `token::authority` and `token::mint` are the usual vault proofs.
+- **E3** Space = 8 (discriminator) + every field, with `Pubkey` = 32, `u64` = 8, `u8` bump = 1, and `Option`/`Vec` prefixes as in [00 §10](./00-rust-fundamentals.md#10-serialization-with-borsh). The three close checks are in §6.6: right signer, right recipient, nothing owed.
+- **E4** Measure `received` with `reload()` (or a before/after amount). PDA signer seeds must include the pool. Use `token_interface` so the CPI goes to the program that actually owns the accounts.
+- **E5** Add a variant, don't insert in the middle of an existing error enum (self-check 8).
+- **E6** Work on a branch, one bug at a time, against a program you own. The PoC is a test that the insecure version allows the bad state and the fix rejects it ([01, Part F](./01-solana-foundations.md#part-f-testing-and-your-first-exploit-test)). Do not deploy the broken branch.
+- **E7** You are listing questions, not inventing findings. "I cannot see what pins this account" is a valid question. Compare with [03, part 5.1](./03-solana-security-deep-dive.md#51-amm-raydium-cp-swap).
+
+</details>
 
 - [ ] **E1 Setup (sections 1–3).** `anchor init staking`. Add a `Config` with `admin`, `fee_bps`, `bump`; an `initialize_config(fee_bps)` instruction that rejects `fee_bps > 1000`; and `set_fee` gated by `#[access_control]`. Test that a non-admin can't call `set_fee`, asserting on your custom error.
 - [ ] **E2 Accounts and constraints (4–5).** Add a `Pool` per mint (`[b"pool", mint]`) with a vault ATA owned by a `pool_authority` PDA. Write the Accounts struct for `stake(amount)` and, for every field, write the "this account is proven to be …" sentence as a comment above it.
