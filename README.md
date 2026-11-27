@@ -43,8 +43,8 @@ Every guide starts with a **Prerequisites / This file covers / This file does no
 | --- | --- | --- | --- |
 | 00 | [**Rust Fundamentals for Solana Developers**](./00-rust-fundamentals.md) | Read and write the Rust Solana code relies on: ownership, lifetimes, traits, `Result` + `thiserror`, iterators, `Rc<RefCell<…>>`, Borsh. Then the Rust security lens: overflow, panics as DoS, truncating casts, rounding, decoder bugs, SBF limits, `unsafe`, supply chain, security clippy lints, property tests and fuzzing. Graded Cargo exercises, plus spot-the-red-flag drills | 1–2 weeks |
 | 01 | [**Solana Foundations: Rust and Solana Concepts in Code**](./01-solana-foundations.md) | See transactions, accounts and PDAs as structs (Rust itself stays in 00); write a native vault by hand; port it to Anchor; write your first proof-of-check test in LiteSVM; practise a first read-only look at official programs | 4–6 weeks with exercises |
-| 02 | [**Anchor Framework Deep-Dive**](./02-anchor-deep-dive.md) | Read an Anchor program as the code it expands into: instruction lifecycle, every account type and constraint, CPIs, zero-copy, Token-2022, IDLs, 14 Anchor-specific bug patterns | 2–3 weeks |
-| 03 | [**Solana Security Deep-Dive: From Account Model to Agave Runtime**](./03-solana-security-deep-dive.md) | Recite the runtime's account-model invariants; know what the core programs check and what they don't; verify upgrade authority, mint/freeze/fee/hook switches and LP holders with explorers and the CLI; trace privilege flow through CPIs; read an AMM, a lending market and a perp DEX; follow a transaction through Agave | 8–12 weeks |
+| 02 | [**Anchor Framework Deep-Dive**](./02-anchor-deep-dive.md) | Read an Anchor program as the code it expands into: instruction lifecycle, every account type and constraint, CPIs, zero-copy, Token-2022, IDLs, 14 Anchor-specific bug patterns. [Eight exercises](./02-anchor-deep-dive.md#exercises), from a red-flag Accounts struct to a staking pool | 2–3 weeks |
+| 03 | [**Solana Security Deep-Dive: From Account Model to Agave Runtime**](./03-solana-security-deep-dive.md) | Recite the runtime's account-model invariants; know what the core programs check and what they don't; verify upgrade authority, mint/freeze/fee/hook switches and LP holders with explorers and the CLI; trace privilege flow through CPIs; read an AMM, a lending market and a perp DEX; follow a transaction through Agave. [Eight exercises](./03-solana-security-deep-dive.md#exercises) | 8–12 weeks |
 | 04 | [**Advanced Solana Security and Real-World Exploits**](./04-advanced-security-and-exploits.md) | Spot 16 bug classes with a short, annotated vulnerable snippet next to the fix; explain Wormhole, Cashio, Crema, Nirvana, Mango, Solend, Raydium, Slope and Loopscale in account-model terms (every figure sourced); run the full audit checklist; write a capstone due-diligence report | 2–4 weeks |
 
 Already fluent in Rust? Skim 00 and do its Level 3–4 exercises. Already shipping Anchor programs? Start at 03, then 04.
@@ -58,7 +58,19 @@ Already fluent in Rust? Skim 00 and do its Level 3–4 exercises. Already shippi
 
 ## Run the exercises
 
-Guide 00's exercises are a Cargo workspace. You need [Rust](https://rustup.rs) (stable).
+Every guide has a clearly headed **Exercises** section (eight graded items in 02–04; 00 and 01 have a longer levelled set). Hints and answers are in collapsible blocks. Only guide 00 ships a Cargo workspace; 01–04 live in the guides themselves.
+
+| Guide | Exercises | You'll… |
+| --- | --- | --- |
+| 00 | [14. Exercises](./00-rust-fundamentals.md#exercises) | Fill in a real Cargo crate, then spot red flags in short snippets |
+| 01 | [Exercises](./01-solana-foundations.md#exercises) | Quiz the account model, inspect official programs read-only, build a native vault, port it to Anchor |
+| 02 | [Exercises](./02-anchor-deep-dive.md#exercises) | Read an incomplete Accounts struct, then build a staking pool one instruction at a time |
+| 03 | [Exercises](./03-solana-security-deep-dive.md#exercises) | Quiz core-program invariants, verify authorities on an explorer, audit a described pool |
+| 04 | [Exercises](./04-advanced-security-and-exploits.md#exercises) | Match incidents to missing checks, checklist a described token, write a capstone due-diligence report |
+
+There is also an [exercises/](./exercises/README.md) index.
+
+Guide 00's workspace needs [Rust](https://rustup.rs) (stable):
 
 ```bash
 git clone https://github.com/KhomDev/rugproof.git
@@ -71,7 +83,7 @@ cargo test -p solutions      # reference answers: all green
 
 The same unit, property-based and adversarial tests run against both crates, so a green `starter` means your answers hold up against the same attacks as the reference ones.
 
-Guides 01–04 build Solana programs; they tell you what to install (Solana/Agave CLI, Anchor, LiteSVM) when you need it.
+Guides 01–04 tell you what to install (Solana/Agave CLI, Anchor, LiteSVM) when a task needs it. Vulnerable snippets are for detection: don't deploy them. Only run tests against programs you wrote, or against public educational repos the guide names.
 
 ## How to read the confidence tags
 
