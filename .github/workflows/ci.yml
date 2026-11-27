@@ -32,6 +32,11 @@ jobs:
         run: cargo test -p solutions
       - name: Starter compiles (tests are expected to fail until solved)
         run: cargo test -p starter --no-run
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Dependency advisories (cargo audit)
+        run: cargo audit
 
   links:
     name: Markdown links

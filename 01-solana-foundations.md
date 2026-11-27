@@ -394,6 +394,17 @@ Answers: (1) 1 + (4 + 2×8) + 32 = 53. (2) The old value: you only changed the c
 
 Programs run in a 4 KB-frame stack, 32 KB heap VM. High-performance frameworks (Pinocchio, p-token) avoid allocations and parse the input buffer with raw pointers inside `unsafe` blocks. You don't need to write `unsafe` yet; you need to recognize that **inside `unsafe`, the compiler stops protecting you**, so auditors read those blocks line by line (bounds, alignment, aliasing). \[Certain\]
 
+### A.10a Rust security quick list
+
+Six Rust habits that prevent a large share of real Solana findings. Each is covered in depth in [guide 00, §13](./00-rust-fundamentals.md#13-rust-security-for-on-chain-code), with program-level examples in [guide 04, §1.16](./04-advanced-security-and-exploits.md#116-rust-level-bugs-panics-compute-memory-and-the-supply-chain):
+
+1. `overflow-checks = true` in the workspace `[profile.release]`, **and** `checked_*` arithmetic on anything a user influences.
+2. No `unwrap()`, `expect()`, `a[i]` or unchecked `/` in program code: a panic in an instruction others rely on is a denial of service.
+3. `u64::try_from(x)` instead of `x as u64`.
+4. Decide the rounding direction of every division (against the user).
+5. Drop `RefCell` borrows (`try_borrow_mut_data`, zero-copy `load_mut`) before any CPI.
+6. Bound every loop and every user-growable collection: compute is a budget an attacker can spend for you.
+
 ### A.11 Self-check
 
 You're ready for Part B when you can answer, without looking:

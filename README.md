@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/rugproof-banner.gif" alt="Rugproof: from Rust basics to code that can't be rugged" width="100%">
+  <img src="./assets/rugproof-banner.jpg" alt="Rugproof: Rust → Solana → Exploits" width="100%">
 </p>
 
 <h1 align="center">Rugproof</h1>
@@ -13,6 +13,10 @@
   <a href="https://github.com/KhomDev/rugproof/actions/workflows/ci.yml"><img src="https://github.com/KhomDev/rugproof/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/code-MIT-blue" alt="Code: MIT"></a>
   <a href="./LICENSE-CONTENT"><img src="https://img.shields.io/badge/text-CC%20BY%204.0-lightgrey" alt="Text: CC BY 4.0"></a>
+</p>
+
+<p align="center">
+  <img src="./assets/rugproof-banner.gif" alt="Animated terminal banner: cargo run --bin rugproof" width="100%">
 </p>
 
 ---
@@ -33,11 +37,11 @@ flowchart LR
 
 | # | Guide | You'll be able to… | Suggested time |
 | --- | --- | --- | --- |
-| 00 | [**Rust Fundamentals for Solana Developers**](./00-rust-fundamentals.md) | Read and write the Rust Solana code relies on: ownership, lifetimes, traits, `Result` + `thiserror`, iterators, `Rc<RefCell<…>>`, integer pitfalls, Borsh. Graded exercises in a real Cargo workspace | 1–2 weeks |
+| 00 | [**Rust Fundamentals for Solana Developers**](./00-rust-fundamentals.md) | Read and write the Rust Solana code relies on: ownership, lifetimes, traits, `Result` + `thiserror`, iterators, `Rc<RefCell<…>>`, Borsh. Then the Rust security lens: overflow, panics as DoS, truncating casts, rounding, decoder bugs, SBF limits, `unsafe`, supply chain, security clippy lints, property tests and fuzzing. Graded exercises in a real Cargo workspace | 1–2 weeks |
 | 01 | [**Solana Foundations: Rust and Solana Concepts in Code**](./01-solana-foundations.md) | See transactions, accounts and PDAs as structs; write a native vault by hand; port it to Anchor; write your first exploit test in LiteSVM | 4–6 weeks with exercises |
 | 02 | [**Anchor Framework Deep-Dive**](./02-anchor-deep-dive.md) | Read an Anchor program as the code it expands into: instruction lifecycle, every account type and constraint, CPIs, zero-copy, Token-2022, IDLs, 14 Anchor-specific bug patterns | 2–3 weeks |
 | 03 | [**Solana Security Deep-Dive: From Account Model to Agave Runtime**](./03-solana-security-deep-dive.md) | Audit for real: account-model invariants, core programs, privilege flow through CPIs, reading an AMM, a lending market and a perp DEX, and how Agave executes a transaction | 8–12 weeks |
-| 04 | [**Advanced Solana Security and Real-World Exploits**](./04-advanced-security-and-exploits.md) | Spot 15 bug classes with vulnerable code next to the fix; explain Wormhole, Cashio, Crema, Nirvana, Mango, Solend, Raydium, Slope and Loopscale in account-model terms (every figure sourced); run a full audit checklist | 2–4 weeks |
+| 04 | [**Advanced Solana Security and Real-World Exploits**](./04-advanced-security-and-exploits.md) | Spot 16 bug classes with vulnerable code next to the fix; explain Wormhole, Cashio, Crema, Nirvana, Mango, Solend, Raydium, Slope and Loopscale in account-model terms (every figure sourced); run a full audit checklist | 2–4 weeks |
 
 Already fluent in Rust? Skim 00 and do its Level 3 exercises. Already shipping Anchor programs? Start at 03, then 04.
 

@@ -1140,6 +1140,10 @@ pub referrer: Option<Account<'info, Referrer>>,
 
 **14. Missing `mut`.** Not a security bug by itself, but an instruction that "updates" state silently doesn't; look for accounting that depends on it.
 
+### 12.2a Rust-level pitfalls inside Anchor handlers
+
+Anchor validates accounts; it does nothing for the Rust in your handler. The same panics, truncating casts, rounding mistakes, unbounded loops and borrows held across CPIs (for example a zero-copy `load_mut()` still alive during `transfer_checked`) apply. See [guide 00, §13](./00-rust-fundamentals.md#13-rust-security-for-on-chain-code) for the rules and the security clippy lints that enforce them, and [guide 04, §1.16](./04-advanced-security-and-exploits.md#116-rust-level-bugs-panics-compute-memory-and-the-supply-chain) for vulnerable-vs-fixed examples. Large accounts belong in `Box<Account<…>>` or `AccountLoader` to stay under the 4 KiB SBF stack frame.
+
 ### 12.3 Version pitfalls
 
 | If the target uses… | Watch for |

@@ -19,6 +19,7 @@ By the end of this guide you can:
 - Use iterators, modules, crates, Cargo and tests the way real Solana repos do
 - Predict integer overflow, truncating casts and rounding, and know what `unsafe` gives up
 - Predict the exact Borsh bytes of a struct
+- Spot the Rust-level bugs behind Solana findings (overflow, panics, truncating casts, rounding, decoder bugs, `RefCell` misuse, SBF limits, `unsafe`) and set up the tools that catch them: security clippy lints, `cargo audit`/`cargo deny`, property tests and fuzzers
 
 ## Prerequisites
 
@@ -42,7 +43,8 @@ By the end of this guide you can:
 10. [Serialization with Borsh](#10-serialization-with-borsh)
 11. [Testing: unit, property and adversarial](#11-testing-unit-property-and-adversarial)
 12. [`unsafe` and `no_std`: recognition only](#12-unsafe-and-no_std-recognition-only)
-13. [Exercises](#13-exercises)
+13. [Rust security for on-chain code](#13-rust-security-for-on-chain-code)
+14. [Exercises](#14-exercises)
 
 ---
 
@@ -388,7 +390,212 @@ You don't need to write `unsafe` yet. You need to recognize it and read it slowl
 
 `#![no_std]` crates don't link the standard library; on-chain programs often avoid allocation because the default heap is small (32 KiB). Expect fixed-size arrays, slices and manual parsing instead of `Vec` and `String`.
 
-## 13. Exercises
+## 13. Rust security for on-chain code
+
+Everything above is ordinary Rust. This section is the security lens on it: the Rust-level mistakes that turn into findings in Solana programs, and the tools that catch them. Guide 04 (§1.16) shows how each one looks in a real program.
+
+### 13.1 Integer overflow: make it impossible to forget
+
+- `cargo build` (debug) panics on overflow; `cargo build --release` **wraps silently** unless the profile says otherwise. On-chain programs are built in release mode, so every program crate needs:
+
+  ```toml
+  [profile.release]
+  overflow-checks = true
+  ```
+
+  Anchor's workspace template sets this; audits still find it removed or missing in hand-made workspaces. Check the **workspace root** `Cargo.toml`, because profiles in member crates are ignored.
+- Even with overflow checks on, an overflow is a **panic** (see 13.2). For values an attacker influences, use `checked_add` / `checked_sub` / `checked_mul` / `checked_div` and return a specific error. Use `saturating_*` only where clamping is the intended behaviour (it rarely is for balances) and `wrapping_*` only where wrapping is the point (hashes, counters designed to roll over).
+- `checked_div` also catches **division by zero**, and `checked_rem` the same for `%`. Signed types add one more trap: `i64::MIN / -1` overflows.
+
+### 13.2 Panics are a denial of service
+
+A panic in a Solana program aborts the transaction. That's not memory-unsafe, but it is a bug class:
+
+- If a **user** can trigger it, they can only hurt themselves, unless the panicking path is one **other users depend on**: a liquidation, a crank, a settlement, a withdrawal from a shared vault. One poisoned account that makes `liquidate` panic can freeze a market.
+- A panic gives the caller nothing to act on. A specific error code is debuggable; `Program failed to complete` is not.
+
+Panic sources to grep for in program code:
+
+| Pattern | Why it panics | Use instead |
+| --- | --- | --- |
+| `.unwrap()`, `.expect("…")` | `None` / `Err` | `?` with `.ok_or(MyError::…)` |
+| `a[i]`, `&data[a..b]` | Out-of-bounds index or slice | `.get(i)`, `.get(a..b)`, then `ok_or` |
+| `a + b`, `a * b`, `a - b` with overflow checks on | Overflow | `checked_*` |
+| `a / b`, `a % b` | `b == 0` | `checked_div`, `checked_rem` |
+| `x.borrow_mut()` on a `RefCell` | Already borrowed (see 13.6) | `try_borrow_mut()?` |
+| `unreachable!()`, `panic!()`, `todo!()`, `assert!` | By design | `require!` / return an error |
+| `u64::try_from(x).unwrap()` | Value doesn't fit | `.map_err(|_| MyError::Overflow)?` |
+
+`unwrap()` is fine in tests, build scripts and on values that are provably infallible (and then `expect("why this can't fail")` documents the proof).
+
+### 13.3 Casts truncate silently
+
+`as` between integer types never fails; it truncates or reinterprets bits.
+
+```rust
+// runnable
+fn main() {
+    let big: u128 = 1 << 64;
+    assert_eq!(big as u64, 0);               // high bits dropped
+    assert_eq!(-1i64 as u64, u64::MAX);      // sign reinterpreted
+    assert_eq!(300u16 as u8, 44);            // 300 mod 256
+    assert_eq!(u64::MAX as i64, -1);         // wraps negative
+    assert!(u64::try_from(big).is_err());    // the safe way
+    println!("all casts behaved as documented");
+}
+```
+
+Typical bug: compute in `u128` to avoid overflow, then `as u64` at the end, quietly turning a huge result into a small one. Use `u64::try_from(x)`. Float-to-int `as` casts saturate (and `NaN` becomes `0`); avoid floats in on-chain math altogether, since results must be deterministic and exact.
+
+### 13.4 Precision and rounding direction
+
+Integer division rounds toward zero, so **every division picks a winner**. Pick it on purpose:
+
+- **Round against the user, in favour of the protocol.** Shares minted: down. Assets paid out: down. Debt owed and fees charged: **up**.
+- Rounding up needs an explicit ceiling division:
+
+  ```rust
+  // snippet: ceil(a / b) without overflow, b > 0
+  fn div_ceil(a: u128, b: u128) -> Option<u128> {
+      a.checked_add(b.checked_sub(1)?)?.checked_div(b)
+  }
+  // (Rust 1.73+ also has u128::div_ceil for unsigned types; it panics if b == 0.)
+  ```
+
+- **Multiply before you divide**, in a wider type: `a * b / c`, not `a / c * b`. The second loses up to `c - 1` units every time.
+- **Precision loss compounds.** A fee that rounds to zero on small amounts can be dodged by splitting one big trade into many small ones. Check: is there a minimum amount, or does the fee round up?
+- Fixed-point accumulators (`reward_per_share`) need a scale factor (for example `1e12`) large enough that per-step rounding is negligible, and `u128` to hold it.
+
+### 13.5 Deserialization pitfalls
+
+Instruction data and account data are attacker-controlled bytes. Treat the decoder as attack surface:
+
+- **No type information.** Borsh decodes any bytes of the right shape (see §10). Check a discriminator or kind tag before trusting the type.
+- **Trailing bytes.** `T::try_from_slice(data)` errors if bytes are left over; `T::deserialize(&mut &data[..])` does not. Accepting trailing bytes can let two different inputs mean the same thing.
+- **Length prefixes are untrusted.** A `Vec<T>` or `String` starts with a `u32` length the attacker chooses. Bound the length *before* allocating, and never call `Vec::with_capacity(untrusted_len)` yourself. On a 32 KiB heap (13.7), a large allocation fails the transaction.
+- **Enum tags.** An unknown variant byte must be an error, not a fallthrough to a default branch.
+- **Layout changes.** Adding a field in the middle of an account struct shifts every later field. Existing accounts then decode into garbage. Append fields at the end, version your accounts, and migrate explicitly.
+- **`bool` and `Option`.** Borsh requires `0` or `1`; a hand-written decoder that treats any non-zero byte as `true` creates many encodings of one value.
+
+### 13.6 `RefCell` borrow panics in `AccountInfo`
+
+`AccountInfo::data` and `::lamports` are `Rc<RefCell<…>>` (§8). Three ways this bites:
+
+1. **Same account passed twice.** Two `AccountInfo`s share one `RefCell`. Calling `borrow_mut()` on both panics; `try_borrow_mut()` returns `AccountBorrowFailed`. Either way, check `a.key != b.key` first when two accounts must differ.
+2. **Holding a borrow across a CPI.** The runtime-side CPI code needs to borrow the accounts you pass. If your code still holds a `RefMut` on one of them, the CPI fails. Drop borrows (end the scope) before `invoke`/`invoke_signed`.
+3. **Holding a borrow while calling a helper that borrows again** panics at runtime even though it compiles.
+
+```rust
+// snippet: scope the borrow so it ends before the CPI
+{
+    let mut data = vault_info.try_borrow_mut_data()?;
+    data[0] = 1;
+} // RefMut dropped here
+invoke_signed(&ix, &accounts, &[seeds])?;
+```
+
+### 13.7 SBF stack, heap and compute limits
+
+Solana programs run in the SBF virtual machine with hard limits (defaults; check current docs for your cluster version):
+
+| Limit | Default | How it fails | Mitigation |
+| --- | --- | --- | --- |
+| Stack frame | 4 KiB per call frame | Build warns "Stack offset … exceeded max offset"; at runtime, an access violation | Avoid large structs and arrays on the stack: `Box` them, use zero-copy accounts, pass references |
+| Call depth | 64 frames | Runtime error | Avoid deep recursion |
+| Heap | 32 KiB, bump allocator that **never frees** | Allocation failure aborts the transaction | Avoid allocations in loops; `ComputeBudget` `RequestHeapFrame` can raise it (up to 256 KiB), but the program must be built with an allocator that uses it |
+| Compute | 200,000 CU per instruction by default; 1,400,000 per transaction max | `exceeded CUs meter` error | Bound every loop; see 13.8 |
+
+Take the build-time stack warning seriously: it compiles, and then fails in production.
+
+### 13.8 Compute-budget DoS
+
+Every instruction has a compute budget. If an attacker can make an instruction you rely on cost more than the budget, nobody can run it:
+
+- **Unbounded loops** over user-growable data: a `Vec` in an account that anyone can push to, an order book with no cap, `remaining_accounts` of any length.
+- **Per-user iteration** in a global instruction (distributing rewards to every staker in one call).
+- **Expensive operations in a loop**: `find_program_address` (up to 255 hashes each), logging (`msg!` with formatting), deserializing large accounts.
+
+Fixes: cap collection sizes on write, paginate global work across transactions, store canonical bumps instead of re-deriving, and use zero-copy for large accounts. Measure with LiteSVM or Mollusk, which report compute units per instruction.
+
+### 13.9 `unsafe` and undefined behaviour
+
+`unsafe` doesn't turn checks off; it lets you do five things the compiler can't verify (dereference raw pointers, call `unsafe fn`s, access mutable statics, implement `unsafe` traits, access union fields). If you get them wrong, the result is **undefined behaviour (UB)**: the optimizer may assume it never happens and produce code that does anything. Typical UB in program code:
+
+- **Misaligned reads.** Casting `&[u8]` to `&MyStruct` with `as *const` assumes alignment the data may not have. Use [`bytemuck`](https://docs.rs/bytemuck) (`try_from_bytes` checks size and alignment; `pod_read_unaligned` copies safely) instead of raw casts.
+- **Aliasing.** Creating two `&mut` to the same bytes, for example from the same account passed twice, is UB even if you never write through one of them.
+- **Invalid values.** A `bool` that isn't 0/1, an enum with an unknown discriminant, or a reference that's null is UB the moment it exists. Don't transmute untrusted bytes into types with invalid bit patterns; `bytemuck::Pod` only allows types where every bit pattern is valid.
+- **Out-of-bounds** pointer arithmetic, and **uninitialized memory** read through `MaybeUninit::assume_init` too early.
+
+Audit `unsafe` blocks line by line, demand a `// SAFETY:` comment that states the invariant, and run tests under [Miri](https://github.com/rust-lang/miri) (`cargo +nightly miri test`), which detects many kinds of UB in host-side tests.
+
+### 13.10 Dependencies and the supply chain
+
+Your program's security includes every crate it compiles.
+
+- **Commit `Cargo.lock`** and build with `--locked` in CI, so a new release of a dependency can't sneak in between review and deploy.
+- **Pin and review** versions of security-critical crates; read the changelog before bumping. Prefer the official `solana-*`, `spl-*`/`solana-program/*` and Anchor crates over look-alike names (typosquatting is real on crates.io).
+- **[`cargo audit`](https://github.com/rustsec/rustsec/tree/main/cargo-audit)** checks `Cargo.lock` against the RustSec advisory database. **[`cargo deny`](https://github.com/EmbarkStudios/cargo-deny)** adds policies: banned crates, allowed licenses, allowed registries and git sources, duplicate versions.
+
+  ```bash
+  cargo install cargo-audit cargo-deny --locked
+  cargo audit
+  cargo deny init && cargo deny check advisories bans licenses sources
+  ```
+
+- `build.rs` scripts and procedural macros run **arbitrary code on your machine at build time**. Review new ones, and keep deploy keys off the machine that builds untrusted code.
+- Publish **verifiable builds** so users can check the deployed bytecode matches the source (guide 04, §1.15).
+
+### 13.11 Clippy lints for security
+
+`cargo clippy` with the default lints catches style and correctness issues. A handful of opt-in lints turn the rules of this section into compiler errors. Add to the program crate's `Cargo.toml` (Rust 1.74+):
+
+```toml
+[lints.clippy]
+arithmetic_side_effects = "deny"   # +, -, *, / that can overflow or panic
+cast_possible_truncation = "deny"  # u128 -> u64 with `as`
+cast_possible_wrap = "deny"        # u64 -> i64 with `as`
+cast_sign_loss = "deny"            # i64 -> u64 with `as`
+unwrap_used = "deny"
+expect_used = "warn"
+indexing_slicing = "deny"          # a[i], &a[x..y]
+panic = "deny"
+integer_division = "warn"          # makes every rounding decision visible
+```
+
+These are noisy on purpose. Allow them locally with `#[allow(clippy::…)]` plus a comment where a case is provably safe; that comment is exactly what a reviewer wants to read. Run `cargo clippy --all-targets -- -D warnings` in CI.
+
+### 13.12 Property tests and fuzzing
+
+Unit tests check the cases you thought of. Property tests and fuzzers find the ones you didn't.
+
+- **[`proptest`](https://docs.rs/proptest)**: random structured inputs plus shrinking to a minimal failing case. Ideal for math invariants ("deposit then withdraw never profits", "sum of balances is conserved") and decoders ("never panics"). The exercise crate in this guide uses it.
+- **[`cargo-fuzz`](https://github.com/rust-fuzz/cargo-fuzz)**: coverage-guided fuzzing with libFuzzer (needs nightly). Point it at pure functions such as instruction decoders and math libraries:
+
+  ```bash
+  cargo install cargo-fuzz
+  cargo fuzz init && cargo fuzz add decode
+  # fuzz/fuzz_targets/decode.rs:  fuzz_target!(|data: &[u8]| { let _ = my_crate::decode_instruction(data); });
+  cargo +nightly fuzz run decode
+  ```
+
+- **[Trident](https://github.com/Ackee-Blockchain/trident)** (Ackee Blockchain): a fuzzing framework for Solana programs that generates instruction sequences against your program and checks invariants you write. Use it for stateful, multi-instruction bugs.
+- **Invariants first.** A fuzzer is only as good as the property it checks. Write them down: total shares ↔ total assets, no account below rent exemption, authority never changes without the old authority's signature.
+
+### 13.13 Rust security checklist
+
+- [ ] `overflow-checks = true` in the workspace `[profile.release]`
+- [ ] No `unwrap`/`expect`/indexing/unchecked arithmetic on attacker-influenced values in program code
+- [ ] No truncating `as` casts; `try_from` instead
+- [ ] Every division has a deliberate rounding direction; ceiling division where the protocol must not lose
+- [ ] Decoders reject trailing bytes, unknown tags and oversized length prefixes
+- [ ] No `RefCell` borrow held across a CPI; duplicate accounts checked
+- [ ] No large values on the stack; heap allocations bounded; loops bounded
+- [ ] Every `unsafe` block has a `// SAFETY:` invariant and Miri-tested host tests
+- [ ] `Cargo.lock` committed, `cargo audit` and `cargo deny` clean in CI
+- [ ] Security clippy lints enabled; `cargo clippy -- -D warnings` in CI
+- [ ] Property tests for math and decoders; a fuzz target for every parser
+
+## 14. Exercises
 
 Clone the repo, then:
 
@@ -536,6 +743,8 @@ Note that `deposit_shares` with a first-deposit 1:1 rule is the shape behind the
 3. Two structs have identical field types. What stops one from being decoded as the other?
 4. Your `Cargo.toml` has no `[profile.release]` section. What does `u64::MAX + 1` do in a release build?
 5. What's the difference between `?` on a `Result` and `.unwrap()` for on-chain code?
+6. Why can a panic in a liquidation instruction be a high-severity bug even though only the caller's transaction fails?
+7. Which three clippy lints would you enable first for a program crate, and what does each catch?
 
 <details>
 <summary>Answers</summary>
@@ -545,6 +754,8 @@ Note that `deposit_shares` with a first-deposit 1:1 rule is the shape behind the
 3. Only a type tag such as an 8-byte discriminator, checked on load. Borsh itself carries no type information.
 4. It wraps to `0`, because release builds disable overflow checks by default. Set `overflow-checks = true`.
 5. `?` returns a specific, catchable error to the caller; `unwrap()` panics and aborts the transaction with a generic error.
+6. Other users depend on it. If an attacker can put the market in a state where `liquidate` always panics (or runs out of compute), nobody can liquidate, and bad debt accumulates.
+7. For example `arithmetic_side_effects` (overflowing or panicking arithmetic), `cast_possible_truncation` (`as` dropping bits) and `unwrap_used` (panics on `None`/`Err`); `indexing_slicing` is a strong fourth.
 
 </details>
 
