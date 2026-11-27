@@ -1,6 +1,6 @@
 # Exercises
 
-Every Rugproof guide has a graded **Exercises** section in the guide itself, with hints and answers in collapsible blocks. Each guide also has a **runnable Cargo workspace** in this folder: practice functions with a test suite, plus a **capstone** audit exercise. All you need is [Rust](https://rustup.rs) (stable). Nothing here needs a validator, a wallet or a network connection, and nothing is ever deployed.
+Every Rugproof guide has a graded **Exercises** section in the guide itself, with hints and answers in collapsible blocks. Each guide also has a **runnable Cargo workspace** in this folder: practice functions with a test suite, plus a **capstone** audit exercise. All you need is [Rust](https://rustup.rs). The repo pins 1.95.0 in [`rust-toolchain.toml`](../rust-toolchain.toml). Nothing here needs a validator, a wallet or a network connection, and nothing is ever deployed. On Windows, see [Windows setup](../README.md#windows-setup) if `cargo test` cannot find a linker (`link.exe` or `dlltool.exe`).
 
 | Guide | Workspace | Exercises (tests) | Capstone: spot the bug, then fix it (tests) |
 | --- | --- | --- | --- |
@@ -14,8 +14,10 @@ Every Rugproof guide has a graded **Exercises** section in the guide itself, wit
 
 ```text
 0N-guide-name/
-├── starter/            your work: todo!() stubs           cargo test -p starter
+├── starter/            your work: todo!() stubs in src/lib.rs
+│   └── tests/exercises.rs   full suite (includes shared/exercises.rs)
 ├── solutions/          reference answers                  cargo test -p solutions
+│   └── tests/exercises.rs   the same suite
 ├── capstone/           a deliberately flawed program      cargo test -p capstone
 ├── capstone-solution/  the same program, patched          cargo test -p capstone-solution
 └── shared/
@@ -23,6 +25,8 @@ Every Rugproof guide has a graded **Exercises** section in the guide itself, wit
     ├── capstone.rs     one test suite, run against capstone AND capstone-solution
     └── model.rs        the small pure-Rust model of accounts, tokens, prices...
 ```
+
+`cargo test -p starter` (from the workspace folder) or `cargo test` from inside `starter/` runs that suite. The tests fail on unsolved `todo!()`s and pass on `solutions/`.
 
 ```bash
 cd exercises/01-solana-foundations

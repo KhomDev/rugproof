@@ -68,7 +68,7 @@ Every guide has a clearly headed **Exercises** section (eight graded items in 02
 | 03 | [Exercises](./03-solana-security-deep-dive.md#exercises): core-program invariants, explorer checks, pool audit | [03-solana-security-deep-dive](./exercises/03-solana-security-deep-dive/README.md) | Share vault: arbitrary CPI, substituted token account |
 | 04 | [Exercises](./04-advanced-security-and-exploits.md#exercises): incident quiz, token checklist, due-diligence report | [04-advanced-security-and-exploits](./exercises/04-advanced-security-and-exploits/README.md) | Lending market: spot-price oracle, limit ignores existing debt |
 
-The workspaces need only [Rust](https://rustup.rs) (stable). No validator, wallet or network:
+The workspaces need only [Rust](https://rustup.rs). This repo pins **1.95.0** in [`rust-toolchain.toml`](./rust-toolchain.toml) (rustup installs it when you enter the directory; leave your global rustup default alone). No validator, wallet or network:
 
 ```bash
 git clone https://github.com/KhomDev/rugproof.git
@@ -81,7 +81,23 @@ cargo test -p capstone           # exploit_* tests fail until you find and fix t
 cargo test -p capstone-solution  # the patched capstone: all green
 ```
 
-The same tests run against `starter` and `solutions`, so a green `starter` means your answers hold up against the same attacks as the reference ones. In each capstone, every `exploit_*` test plays the attacker locally against a toy program, and CI checks that each one really fails on the flawed version.
+The stubs you fill in are in `starter/src/lib.rs`. The full test suite is in `starter/tests/exercises.rs` (it includes `shared/exercises.rs`) and the same file is run against `solutions/`, so a green `starter` means your answers hold up against the same attacks as the reference ones. `cargo test` from inside `starter/` or `solutions/` also works. In each capstone, every `exploit_*` test plays the attacker locally against a toy program, and CI checks that each one really fails on the flawed version.
+
+### Windows setup
+
+Rust 1.85+ is required because some crates.io dependencies use edition 2024. A global rustup default of 1.79 will fail to parse those manifests; the pinned `rust-toolchain.toml` is what selects 1.95.0 in this repo.
+
+Pick one linker. You do **not** need both.
+
+- **Visual Studio Build Tools** (the usual MSVC target): install [Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the **Desktop development with C++** workload so `link.exe` is on the path. Then `cargo test` uses the default `x86_64-pc-windows-msvc` host.
+- **No Visual Studio:** install [MSYS2](https://www.msys2.org/) and the UCRT64 toolchain (`pacman -S mingw-w64-ucrt-x86_64-gcc`). Add `C:\msys64\ucrt64\bin` to your **User** PATH (so `gcc` and `dlltool` are visible in a new PowerShell window), then in this clone only:
+
+  ```powershell
+  rustup toolchain install 1.95.0-x86_64-pc-windows-gnu
+  rustup override set 1.95.0-x86_64-pc-windows-gnu
+  ```
+
+  The override is local to this checkout and is not committed. Open a new terminal after changing PATH.
 
 Guides 01–04 also tell you what to install (Solana/Agave CLI, Anchor, LiteSVM) when a task needs the real toolchain. Vulnerable snippets are for detection: don't deploy them. Only run tests against programs you wrote, or against public educational repos the guide names.
 

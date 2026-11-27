@@ -1,6 +1,8 @@
 #![allow(unused_variables)]
 //! Starter code for guide 02 (Anchor Deep-Dive).
-//! Replace every `todo!()` and run `cargo test -p starter`.
+//! Replace every `todo!()` in this file.
+//! The full test suite is in `tests/exercises.rs` (it includes `../shared/exercises.rs`).
+//! Run `cargo test -p starter` from the workspace root, or `cargo test` from `starter/`.
 //! Each exercise is a check an Anchor macro writes for you; here you write it
 //! by hand. Model types: `../shared/model.rs`, hashing: `../shared/pda_base.rs`.
 //! Stuck? Reference answers are in `../solutions`.

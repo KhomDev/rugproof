@@ -12,6 +12,8 @@ cargo test -p capstone-solution  # the patched capstone: all green
 ```
 
 The exercises (`starter/`, `solutions/`, [`shared/exercises.rs`](./shared/exercises.rs)) are described level by level in the guide's [section 14](../../00-rust-fundamentals.md#14-exercises). There are 16 tests: unit, property-based and adversarial.
+The functions you edit are in `starter/src/lib.rs`. The full test suite is in [`starter/tests/exercises.rs`](./starter/tests/exercises.rs) (it includes [`shared/exercises.rs`](./shared/exercises.rs)) and is also run against `solutions/`. `cargo test` from inside `starter/` or `solutions/` works too.
+
 
 ## Capstone: the points ledger (`capstone/`)
 
